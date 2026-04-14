@@ -58,12 +58,17 @@ export default function SearchAnime({ onSelect, disabled }) {
     setDropdownOpen(false);
     setQuery('');
     setLoading(true);
-    // Fetch full seiyuu cast
-    const fullAnime = await getAnimeWithSeiyuus(anime.id);
-    setLoading(false);
-    
-    if (fullAnime) {
-      onSelect(fullAnime);
+    try {
+      // Fetch full seiyuu cast
+      const fullAnime = await getAnimeWithSeiyuus(anime.id);
+      
+      if (fullAnime) {
+        onSelect(fullAnime);
+      }
+    } catch (e) {
+      console.error("Fetch seiyuus failed", e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -100,6 +105,7 @@ export default function SearchAnime({ onSelect, disabled }) {
           onKeyDown={handleKeyDown}
           onFocus={() => { if (results.length > 0) setDropdownOpen(true); }}
           disabled={disabled} // don't disable on loading to prevent losing focus
+          autoFocus={true}
         />
         {loading && (
           <Loader2 size={20} color="var(--primary)" className="animate-spin" style={{ position: 'absolute', right: '16px', top: '14px', animation: 'spin 1s linear infinite' }} />

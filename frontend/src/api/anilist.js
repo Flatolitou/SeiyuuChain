@@ -37,7 +37,7 @@ export async function getAnimeWithSeiyuus(id) {
         id
         title { romaji english }
         coverImage { large }
-        characters (perPage: 50) {
+        characters (page: 1, perPage: 50, sort: [ROLE, RELEVANCE]) {
           edges {
             node {
               id
