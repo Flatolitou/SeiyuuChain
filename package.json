@@ -2,9 +2,7 @@
   "name": "seiyuuchain-root",
   "version": "1.0.0",
   "scripts": {
-    "build:frontend": "cd frontend && npm install && npm run build",
-    "build:server": "cd server && npm install",
-    "build": "npm run build:frontend && npm run build:server",
+    "build": "npm install --prefix frontend && npm run build --prefix frontend && npm install --prefix server",
     "start": "node server/index.js"
   },
   "dependencies": {
