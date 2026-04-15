@@ -218,22 +218,31 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
           </div>
         ) : (
           roomData.chain.slice().reverse().slice(0, 20).map((item, i) => {
-            // Because we sliced the reversed list to 20, we need to map the original indices
-            // to correctly identify 'isFirst' (the very first anime ever played).
             const originalIndex = roomData.chain.length - 1 - i;
             const isFirst = originalIndex === 0;
             
             return (
-                  <div style={{ width: '2px', height: '30px', background: 'var(--glass-border)' }}></div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-darker)', width: '32px', height: '32px', borderRadius: '50%', border: '1px solid var(--text-dim)', zIndex: 1 }}>
-                    <ArrowUp size={20} color="var(--primary)" />
+              <div key={originalIndex} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '32px' }}>
+                <AnimeChainItem 
+                  item={item} 
+                  index={originalIndex} 
+                  roomData={roomData} 
+                  isFirst={isFirst} 
+                />
+                
+                {/* Arrow Up bridge EXCEPT for the relative bottom card of the slice */}
+                {i < 19 && originalIndex > 0 && (
+                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: 'var(--text-dim)', margin: '-16px 0' }}>
+                    <div style={{ width: '2px', height: '30px', background: 'var(--glass-border)' }}></div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-darker)', width: '32px', height: '32px', borderRadius: '50%', border: '1px solid var(--text-dim)', zIndex: 1 }}>
+                      <ArrowUp size={20} color="var(--primary)" />
+                    </div>
+                    <div style={{ width: '2px', height: '30px', background: 'var(--glass-border)' }}></div>
                   </div>
-                  <div style={{ width: '2px', height: '30px', background: 'var(--glass-border)' }}></div>
-                </div>
-              )}
-
-            </div>
-          )})
+                )}
+              </div>
+            );
+          })
         )}
       </div>
 
