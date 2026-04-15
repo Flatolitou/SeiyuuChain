@@ -38,6 +38,24 @@ function broadcastLobbies() {
   io.emit('lobbies_update', getPublicRooms());
 }
 
+const emitRoomUpdate = (rid) => {
+  const r = rooms[rid];
+  if (!r) return;
+  const sanitizedChain = r.chain.map((item, index) => {
+    if (index === r.chain.length - 1 || item.revealCast) return item;
+    return {
+      ...item,
+      anime: { ...item.anime, seiyuus: [] } // Strip massive historical payloads
+    };
+  });
+  io.to(rid).emit('room_state_update', {
+    ...r,
+    chain: sanitizedChain,
+    usedAnimeIds: Array.from(r.usedAnimeIds),
+    timerInterval: undefined
+  });
+};
+
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
@@ -65,24 +83,6 @@ io.on('connection', (socket) => {
         skipUsedThisTurn: false
       };
     }
-
-    const emitRoomUpdate = (rid) => {
-      const r = rooms[rid];
-      if (!r) return;
-      const sanitizedChain = r.chain.map((item, index) => {
-        if (index === r.chain.length - 1 || item.revealCast) return item;
-        return {
-          ...item,
-          anime: { ...item.anime, seiyuus: [] } // Strip massive historical payloads
-        };
-      });
-      io.to(rid).emit('room_state_update', {
-        ...r,
-        chain: sanitizedChain,
-        usedAnimeIds: Array.from(r.usedAnimeIds),
-        timerInterval: undefined
-      });
-    };
 
     const room = rooms[roomId];
 
