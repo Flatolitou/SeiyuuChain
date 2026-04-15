@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import SearchAnime from './SearchAnime';
 import { Timer, AlertTriangle, ArrowUp, X, LogOut, FastForward, Clock, Eye, Crosshair } from 'lucide-react';
 import TimerDisplay from './game/TimerDisplay';
