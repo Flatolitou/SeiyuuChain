@@ -48,12 +48,11 @@ const emitRoomUpdate = (rid) => {
     // 3. Any card manually revealed by a lifeline.
     if (index === 0 || index === r.chain.length - 1 || item.revealCast) return item;
 
-    // For historical cards in between, we strip the massive cast list and usage snapshots
-    // but we PRESERVE linkingSeiyuus so the connecting logic is visible in the UI.
+    // We strip the massive anime.seiyuus list for intermediate cards
+    // but we PRESERVE linkingSeiyuus and the (now filtered) seiyuuUsageCountSnapshot
     return {
       ...item,
-      anime: { ...item.anime, seiyuus: [] }, 
-      seiyuuUsageCountSnapshot: {} 
+      anime: { ...item.anime, seiyuus: [] }
     };
   });
   io.to(rid).emit('room_state_update', {
@@ -287,10 +286,19 @@ io.on('connection', (socket) => {
       
       room.skipUsedThisTurn = false;
 
+      // Create a filtered snapshot of usage counts for ONLY the seiyuus in this anime
+      // This allows historical accuracy without the quadratic payload growth.
+      const snapshot = {};
+      (anime.seiyuus || []).forEach(s => {
+        if (room.seiyuuUsageCount[s.id]) {
+          snapshot[s.id] = room.seiyuuUsageCount[s.id];
+        }
+      });
+
       room.chain.push({
         anime: anime,
         linkingSeiyuus: linkingSeiyuus, // null for first
-        seiyuuUsageCountSnapshot: { ...room.seiyuuUsageCount }
+        seiyuuUsageCountSnapshot: snapshot
       });
 
       // Reset timer and rotate turn
