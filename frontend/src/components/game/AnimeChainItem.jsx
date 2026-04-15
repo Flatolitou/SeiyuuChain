@@ -1,10 +1,11 @@
 import React from 'react';
+import { X as XIcon } from 'lucide-react';
 
 const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
-  const turnNumber = roomData.chain.length - index;
+  const turnNumber = index + 1;
 
   return (
-    <div className="animate-chain" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+    <div className="animate-chain" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', width: '100%' }}>
       {/* Anime Card */}
       <div style={{ 
         display: 'flex', 
@@ -14,7 +15,6 @@ const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
         borderRadius: '16px',
         padding: '24px',
         width: '100%',
-        maxWidth: '700px',
         boxShadow: '0 4px 20px rgba(0,0,0,0.2)'
       }}>
         <div style={{ position: 'relative' }}>
@@ -55,46 +55,45 @@ const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
                 )})}
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--primary)', opacity: 0.7, fontWeight: 600 }}>Connecting Seiyuu</div>
-                  {item.linkingSeiyuus ? item.linkingSeiyuus.map(lSeiyuu => {
-                    const usageCount = item.seiyuuUsageCountSnapshot?.[lSeiyuu.id] || roomData.seiyuuUsageCount[lSeiyuu.id] || 0;
-                    return (
-                      <div key={lSeiyuu.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-                        <div style={{ display: 'flex', gap: '8px', flexShrink: 0, marginTop: '2px' }}>
-                          {[1, 2, 3].map(n => (
-                            <div key={n} style={{ 
-                              width: '24px', height: '24px', borderRadius: '50%', 
-                              border: `1px solid ${usageCount >= n ? 'var(--danger)' : 'var(--text-dim)'}`,
-                              background: usageCount >= n ? 'var(--danger)' : 'transparent'
-                            }} />
-                          ))}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {item.linkingSeiyuus && item.linkingSeiyuus.map(lSeiyuu => {
+                  const usageCount = item.seiyuuUsageCountSnapshot?.[lSeiyuu.id] || roomData.seiyuuUsageCount[lSeiyuu.id] || 0;
+                  return (
+                    <div key={lSeiyuu.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                      {/* 3 Lives Circles */}
+                      <div style={{ display: 'flex', gap: '8px', flexShrink: 0, marginTop: '2px' }}>
+                        {[1, 2, 3].map(n => (
+                          <div key={n} style={{ 
+                            width: '24px', height: '24px', borderRadius: '50%', 
+                            border: `2px solid ${usageCount >= n ? 'var(--danger)' : 'var(--text-dim)'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: usageCount >= n ? 'rgba(239, 68, 68, 0.2)' : 'transparent'
+                          }}>
+                            {usageCount >= n && <XIcon size={16} color="var(--danger)" />}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        {/* Seiyuu Name */}
+                        <div style={{ fontWeight: 800, fontSize: '1.3rem', color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                          {lSeiyuu.name?.full}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '1.4rem', fontWeight: 600, color: 'white' }}>{lSeiyuu.name?.full}</span>
-                          <span style={{ fontSize: '1.1rem', color: 'var(--text-dim)' }}>{lSeiyuu.characterNames ? lSeiyuu.characterNames.join(', ') : lSeiyuu.characterName}</span>
+
+                        {/* Character Name */}
+                        <div style={{ fontStyle: 'italic', color: 'var(--primary)', fontSize: '1.1rem', wordBreak: 'break-word', lineHeight: '1.4' }}>
+                          as {lSeiyuu.characterNames ? lSeiyuu.characterNames.join(', ') : lSeiyuu.characterName}
                         </div>
                       </div>
-                    );
-                  }) : (
-                    <div style={{ fontSize: '1.2rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>Mystery Start!</div>
-                  )}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {/* Right Side: Visual */}
-          <div style={{ width: '140px', flexShrink: 0 }}>
-            {item.anime.coverImage && (
-              <img 
-                src={item.anime.coverImage.large} 
-                alt={item.anime.title.romaji} 
-                style={{ width: '100%', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', border: '1px solid var(--glass-border)' }} 
-              />
-            )}
-          </div>
+          {/* Right Side: Anime Cover */}
+          <img src={item.anime.coverImage?.large || item.anime.coverImage?.medium} alt="" style={{ width: '100px', height: '140px', objectFit: 'cover', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} />
         </div>
       </div>
     </div>
