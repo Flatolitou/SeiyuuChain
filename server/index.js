@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -15,6 +17,29 @@ const io = new Server(server, {
 });
 
 const PORT = 3001;
+
+// Load Anime Database
+let anilistData = { anime: {}, seiyuus: {} };
+const dbPath = path.join(__dirname, '../frontend/public/anilist_data.json');
+if (fs.existsSync(dbPath)) {
+  anilistData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+  console.log(`Server loaded DB: ${Object.keys(anilistData.anime).length} anime`);
+} else {
+  console.error("CRITICAL: anilist_data.json not found!");
+}
+
+// Auto-reload DB when scraper updates the file
+fs.watchFile(dbPath, (curr, prev) => {
+  if (curr.mtime > prev.mtime) {
+    try {
+      const newData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      anilistData = newData;
+      console.log(`📡 DB Auto-reloaded: ${Object.keys(anilistData.anime).length} anime`);
+    } catch (e) {
+      console.error("Failed to auto-reload DB (likely file is being written):", e.message);
+    }
+  }
+});
 
 // Stores current active rooms
 const rooms = {};
@@ -42,17 +67,13 @@ const emitRoomUpdate = (rid) => {
   const r = rooms[rid];
   if (!r) return;
   const sanitizedChain = r.chain.map((item, index) => {
-    // We must keep full data for:
-    // 1. The very first card (index 0) - UI shows its full cast always.
-    // 2. The very last card (index length-1) - This is the current active card.
-    // 3. Any card manually revealed by a lifeline.
-    if (index === 0 || index === r.chain.length - 1 || item.revealCast) return item;
-
-    // We strip the massive anime.seiyuus list for intermediate cards
-    // but we PRESERVE linkingSeiyuus and the (now filtered) seiyuuUsageCountSnapshot
+    // We send only the ABSOLUTE MINIMUM needed for the card
+    // The client will hydrate the title/image/all_seiyuus using its local copy
     return {
-      ...item,
-      anime: { ...item.anime, seiyuus: [] }
+      animeId: item.animeId,
+      linkingSeiyuuIds: item.linkingSeiyuuIds, // null for first
+      seiyuuUsageCountSnapshot: item.seiyuuUsageCountSnapshot,
+      revealCast: !!item.revealCast
     };
   });
   io.to(rid).emit('room_state_update', {
@@ -183,22 +204,13 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('play_turn', ({ roomId, anime, isSnipe, snipeSeiyuuId }) => {
+  socket.on('play_turn', ({ roomId, animeId, isSnipe, snipeSeiyuuId }) => {
     const room = rooms[roomId];
     if (!room || room.status !== 'playing') return;
 
-    // Verify anime data is valid
-    if (!anime || !anime.seiyuus || !Array.isArray(anime.seiyuus)) {
-      return socket.emit('turn_error', { message: 'Invalid anime data received.' });
-    }
-
-    // Check if anime has absolutely no voice actors
-    if (anime.seiyuus.length === 0) {
-      return io.to(roomId).emit('play_penalty', { 
-        playerId: socket.id, 
-        message: 'Warning: This anime has no voice actors registered!', 
-        newTimer: room.timer 
-      });
+    const anime = anilistData.anime[animeId];
+    if (!anime) {
+      return socket.emit('turn_error', { message: 'Anime not found in database!' });
     }
 
     // Verify it's this player's turn
@@ -207,11 +219,11 @@ io.on('connection', (socket) => {
     }
 
     let isValid = true;
-    let linkingSeiyuus = null;
+    let linkingSeiyuuIds = null;
     let turnErrorMsg = '';
 
     // RULE 1: Has it been played?
-    if (room.usedAnimeIds.has(anime.id)) {
+    if (room.usedAnimeIds.has(animeId)) {
       isValid = false;
       turnErrorMsg = 'Anime already played!';
     } else {
@@ -221,13 +233,14 @@ io.on('connection', (socket) => {
           isValid = false;
           turnErrorMsg = 'Snipe lifeline already used or unavailable!';
         } else {
-          const matchedSeiyuu = anime.seiyuus.find(s => s.id === parseInt(snipeSeiyuuId));
-          if (matchedSeiyuu) {
+          const hasSeiyuu = !!anime.s[snipeSeiyuuId];
+          if (hasSeiyuu) {
             isValid = true;
-            linkingSeiyuus = [matchedSeiyuu];
+            linkingSeiyuuIds = [parseInt(snipeSeiyuuId)];
             room.lifelines[socket.id].snipe = false;
             const playerName = room.players.find(p => p.id === socket.id)?.name;
-            io.to(roomId).emit('notification', { message: `${playerName} sniped ${matchedSeiyuu.name.full}!` });
+            const seiyuuName = anilistData.seiyuus[snipeSeiyuuId] || 'Someone';
+            io.to(roomId).emit('notification', { message: `${playerName} sniped ${seiyuuName}!` });
           } else {
             isValid = false;
             turnErrorMsg = 'The sniped seiyuu is not in this anime!';
@@ -237,26 +250,35 @@ io.on('connection', (socket) => {
         // RULE 2: Does it connect appropriately?
         if (room.chain.length > 0) {
           isValid = false; // assume false until connection found
-          const prevAnime = room.chain[room.chain.length - 1].anime;
+          const prevAnimeId = room.chain[room.chain.length - 1].animeId;
+          const prevAnime = anilistData.anime[prevAnimeId];
           
           // Find intersection of seiyuus
-          const prevSeiyuusIds = new Set((prevAnime.seiyuus || []).map(s => s.id));
-          const currentSeiyuus = anime.seiyuus || [];
+          const prevSeiyuusIds = new Set(Object.keys(prevAnime.s || {}));
+          const currentSeiyuuIds = Object.keys(anime.s || {});
           
-          let intersecting = currentSeiyuus.filter(s => prevSeiyuusIds.has(s.id));
+          console.log(`Debug Connection: prevAnime=${prevAnimeId}, currentAnime=${animeId}`);
+          console.log(`Prev Seiyuu IDs:`, Array.from(prevSeiyuusIds));
+          console.log(`Current Seiyuu IDs:`, currentSeiyuuIds);
+          
+          let intersecting = currentSeiyuuIds.filter(id => prevSeiyuusIds.has(id));
+          console.log(`Intersecting IDs:`, intersecting);
           
           if (intersecting.length > 0) {
-            let hasMaxedSeiyuu = intersecting.find(s => (room.seiyuuUsageCount[s.id] || 0) >= 3);
+            let hasMaxedSeiyuu = intersecting.find(id => (room.seiyuuUsageCount[id] || 0) >= 3);
             if (hasMaxedSeiyuu) {
                 isValid = false;
-                turnErrorMsg = `${hasMaxedSeiyuu.name.full} has 3X`;
+                const seiyuuName = anilistData.seiyuus[hasMaxedSeiyuu];
+                turnErrorMsg = `${seiyuuName} has 3X`;
             } else {
                 isValid = true;
-                linkingSeiyuus = intersecting;
+                linkingSeiyuuIds = intersecting.map(id => parseInt(id));
+                console.log(`Connection Valid! Linking IDs:`, linkingSeiyuuIds);
             }
           } else {
             isValid = false;
             turnErrorMsg = 'No valid connecting seiyuu found.';
+            console.log(`Connection Failed: No intersection`);
           }
         } else {
             // First turn is always valid as long as it wasn't played (checked above)
@@ -277,27 +299,26 @@ io.on('connection', (socket) => {
       }
     } else {
       // Valid move!
-      room.usedAnimeIds.add(anime.id);
-      if (linkingSeiyuus) {
-        linkingSeiyuus.forEach(seiyuu => {
-          room.seiyuuUsageCount[seiyuu.id] = Math.min((room.seiyuuUsageCount[seiyuu.id] || 0) + 1, 3);
+      room.usedAnimeIds.add(animeId);
+      if (linkingSeiyuuIds) {
+        linkingSeiyuuIds.forEach(id => {
+          room.seiyuuUsageCount[id] = Math.min((room.seiyuuUsageCount[id] || 0) + 1, 3);
         });
       }
       
       room.skipUsedThisTurn = false;
 
       // Create a filtered snapshot of usage counts for ONLY the seiyuus in this anime
-      // This allows historical accuracy without the quadratic payload growth.
       const snapshot = {};
-      (anime.seiyuus || []).forEach(s => {
-        if (room.seiyuuUsageCount[s.id]) {
-          snapshot[s.id] = room.seiyuuUsageCount[s.id];
+      Object.keys(anime.s || {}).forEach(id => {
+        if (room.seiyuuUsageCount[id]) {
+          snapshot[id] = room.seiyuuUsageCount[id];
         }
       });
 
       room.chain.push({
-        anime: anime,
-        linkingSeiyuus: linkingSeiyuus, // null for first
+        animeId: animeId,
+        linkingSeiyuuIds: linkingSeiyuuIds, // null for first
         seiyuuUsageCountSnapshot: snapshot
       });
 
@@ -306,8 +327,8 @@ io.on('connection', (socket) => {
       room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
 
       io.to(roomId).emit('play_success', { 
-        anime: anime, 
-        linkingSeiyuus,
+        animeId: animeId, 
+        linkingSeiyuuIds,
         playerId: socket.id 
       });
       emitRoomUpdate(roomId);

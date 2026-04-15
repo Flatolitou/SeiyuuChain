@@ -4,6 +4,7 @@ import Home from './components/Home';
 import LobbyBrowser from './components/LobbyBrowser';
 import RoomLobby from './components/RoomLobby';
 import GameBoard from './components/GameBoard';
+import { initDb } from './api/localDb';
 
 // Connect to the server
 // Uses the environment variable if provided (for production), otherwise local dev server
@@ -51,6 +52,9 @@ function App() {
     socket.on('room_error', (data) => {
       showToast(data.message, 'error');
     });
+
+    // Initialize Local DB
+    initDb();
 
     return () => {
       socket.off('connect');

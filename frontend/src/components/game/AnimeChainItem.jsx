@@ -1,8 +1,16 @@
 import React from 'react';
 import { X as XIcon } from 'lucide-react';
+import { getAnimeWithSeiyuusLocal } from '../../api/localDb';
 
 const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
   const turnNumber = index + 1;
+  const anime = getAnimeWithSeiyuusLocal(item.animeId);
+
+  if (!anime) return <div style={{ color: 'var(--text-dim)' }}>Loading Anime #{turnNumber}...</div>;
+
+  const linkingSeiyuus = item.linkingSeiyuuIds ? item.linkingSeiyuuIds.map(id => {
+      return anime.seiyuus.find(s => s.id === id);
+  }).filter(Boolean) : [];
 
   return (
     <div className="animate-chain" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', width: '100%' }}>
@@ -22,7 +30,7 @@ const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
             #{turnNumber}
           </div>
           <h3 style={{ textAlign: 'center', fontSize: '1.6rem', padding: '0 40px 12px 40px', marginBottom: '16px', borderBottom: '1px solid var(--glass-border)', wordBreak: 'break-word' }}>
-            {item.anime.title.romaji || item.anime.title.english}
+            {anime.title.romaji || anime.title.english}
           </h3>
         </div>
 
@@ -32,7 +40,7 @@ const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {isFirst || item.revealCast ? (
               <div className="custom-scroll" style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '12px' }}>
-                {item.anime.seiyuus?.map(s => {
+                {anime.seiyuus?.map(s => {
                   const usageCount = item.seiyuuUsageCountSnapshot?.[s.id] || roomData.seiyuuUsageCount[s.id] || 0;
                   return (
                   <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px dashed var(--glass-border)', alignItems: 'flex-start', gap: '16px' }}>
@@ -56,7 +64,7 @@ const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {item.linkingSeiyuus && item.linkingSeiyuus.map(lSeiyuu => {
+                {linkingSeiyuus.map(lSeiyuu => {
                   const usageCount = item.seiyuuUsageCountSnapshot?.[lSeiyuu.id] || roomData.seiyuuUsageCount[lSeiyuu.id] || 0;
                   return (
                     <div key={lSeiyuu.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
@@ -93,7 +101,7 @@ const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
           </div>
 
           {/* Right Side: Anime Cover */}
-          <img src={item.anime.coverImage?.large || item.anime.coverImage?.medium} alt="" style={{ width: '100px', height: '140px', objectFit: 'cover', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} />
+          <img src={anime.coverImage?.large || anime.coverImage?.medium} alt="" style={{ width: '100px', height: '140px', objectFit: 'cover', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} />
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import SearchAnime from './SearchAnime';
 import { Timer, AlertTriangle, ArrowUp, X, LogOut, FastForward, Clock, Eye, Crosshair } from 'lucide-react';
 import TimerDisplay from './game/TimerDisplay';
 import AnimeChainItem from './game/AnimeChainItem';
+import { getAnimeWithSeiyuusLocal } from '../api/localDb';
 
 export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLeaveRoom }) {
   const [penaltyMessage, setPenaltyMessage] = useState(null);
@@ -54,13 +55,15 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
       return;
     }
     
-    socket.emit('play_turn', { roomId: roomData.id, anime, isSnipe: true, snipeSeiyuuId: playSeiyuuId });
+    socket.emit('play_turn', { roomId: roomData.id, animeId: anime.id, isSnipe: true, snipeSeiyuuId: playSeiyuuId });
     setIsSniping(false);
     setSnipeSeiyuuId('');
   };
 
-  // Safe fallback if the chain is empty but sniping is active (shouldn't happen realistically on turn 1)
-  const currentAnimeSeiyuus = roomData.chain.length > 0 ? roomData.chain[roomData.chain.length - 1].anime.seiyuus : [];
+  // Hydrate current anime seiyuus for the snipe dropdown
+  const currentItem = roomData.chain.length > 0 ? roomData.chain[roomData.chain.length - 1] : null;
+  const currentAnimeData = currentItem ? getAnimeWithSeiyuusLocal(currentItem.animeId) : null;
+  const currentAnimeSeiyuus = currentAnimeData ? currentAnimeData.seiyuus : [];
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px', height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -195,7 +198,7 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
                 </div>
               </div>
             ) : (
-              <SearchAnime onSelect={(anime) => socket.emit('play_turn', { roomId: roomData.id, anime })} />
+              <SearchAnime onSelect={(anime) => socket.emit('play_turn', { roomId: roomData.id, animeId: anime.id })} />
             )
           ) : (
             <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-dim)' }}>

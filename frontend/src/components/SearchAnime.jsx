@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { searchAnimeDropdown, getAnimeWithSeiyuus } from '../api/anilist';
+import { searchAnimeLocal, getAnimeWithSeiyuusLocal } from '../api/localDb';
 import { Search, Loader2 } from 'lucide-react';
 
 export default function SearchAnime({ onSelect, disabled }) {
@@ -41,10 +41,10 @@ export default function SearchAnime({ onSelect, disabled }) {
 
     if (timerRef.current) clearTimeout(timerRef.current);
     
-    // Debounce 250ms
+    // No debounce needed for local search, but keeping short timer for better UI feel
     timerRef.current = setTimeout(async () => {
       setLoading(true);
-      const res = await searchAnimeDropdown(query);
+      const res = searchAnimeLocal(query);
       setResults(res || []);
       setDropdownOpen(true);
       setSelectedIndex(-1);
@@ -59,8 +59,8 @@ export default function SearchAnime({ onSelect, disabled }) {
     setQuery('');
     setLoading(true);
     try {
-      // Fetch full seiyuu cast
-      const fullAnime = await getAnimeWithSeiyuus(anime.id);
+      // Fetch full seiyuu cast from local DB
+      const fullAnime = getAnimeWithSeiyuusLocal(anime.id);
       
       if (fullAnime) {
         onSelect(fullAnime);
