@@ -42,10 +42,18 @@ const emitRoomUpdate = (rid) => {
   const r = rooms[rid];
   if (!r) return;
   const sanitizedChain = r.chain.map((item, index) => {
-    if (index === r.chain.length - 1 || item.revealCast) return item;
+    // We must keep full data for:
+    // 1. The very first card (index 0) - UI shows its full cast always.
+    // 2. The very last card (index length-1) - This is the current active card.
+    // 3. Any card manually revealed by a lifeline.
+    if (index === 0 || index === r.chain.length - 1 || item.revealCast) return item;
+
+    // For historical cards in between, we strip the massive cast list and usage snapshots
+    // but we PRESERVE linkingSeiyuus so the connecting logic is visible in the UI.
     return {
       ...item,
-      anime: { ...item.anime, seiyuus: [] } // Strip massive historical payloads
+      anime: { ...item.anime, seiyuus: [] }, 
+      seiyuuUsageCountSnapshot: {} 
     };
   });
   io.to(rid).emit('room_state_update', {
