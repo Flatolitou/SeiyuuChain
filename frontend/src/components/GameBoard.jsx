@@ -5,20 +5,26 @@ import { Timer, AlertTriangle, ArrowUp, X, LogOut, FastForward, Clock, Eye, Cros
 export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLeaveRoom }) {
   const [timer, setTimer] = useState(roomData.timer);
   const [penaltyMessage, setPenaltyMessage] = useState(null);
+  const [notification, setNotification] = useState(null);
   const [isSniping, setIsSniping] = useState(false);
   const [snipeSeiyuuId, setSnipeSeiyuuId] = useState('');
-
   useEffect(() => {
+    if (!socket) return;
     socket.on('timer_tick', (t) => setTimer(t));
     socket.on('play_penalty', ({ message, newTimer }) => {
       setPenaltyMessage(message);
       setTimer(newTimer);
       setTimeout(() => setPenaltyMessage(null), 3000);
     });
+    socket.on('notification', ({ message }) => {
+      setNotification(message);
+      setTimeout(() => setNotification(null), 4000);
+    });
 
     return () => {
       socket.off('timer_tick');
       socket.off('play_penalty');
+      socket.off('notification');
     };
   }, [socket]);
 
@@ -156,13 +162,16 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
       {/* Input Area */}
       <div style={{ marginBottom: '24px', position: 'relative', zIndex: 100 }}>
         {penaltyMessage && (
-          <div className="animate-fade-in" style={{ position: 'absolute', bottom: '-40px', left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 100 }}>
-            <div style={{ background: 'var(--danger)', color: 'white', padding: '12px 24px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 20px rgba(239, 68, 68, 0.4)' }}>
-              <AlertTriangle size={20} />
-              <span style={{ fontWeight: 600 }}>{penaltyMessage}</span>
-            </div>
-          </div>
-        )}
+        <div className="glass-panel animate-fade-in" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: 'var(--danger)', padding: '12px 24px', marginBottom: '24px', textAlign: 'center', fontWeight: 'bold' }}>
+          {penaltyMessage}
+        </div>
+      )}
+      
+      {notification && (
+        <div className="glass-panel animate-fade-in" style={{ backgroundColor: 'rgba(56, 189, 248, 0.2)', borderColor: '#38bdf8', padding: '12px 24px', marginBottom: '24px', textAlign: 'center', fontWeight: 'bold', color: 'white' }}>
+          {notification}
+        </div>
+      )}
         
         <div className="glass-panel" style={{ padding: '16px' }}>
           {roomData.status === 'waiting' ? (
@@ -173,8 +182,7 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
             isSniping ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0, color: 'var(--primary)' }}><Crosshair size={18} style={{ verticalAlign: 'middle', marginRight: '8px' }}/> Sniping Mode</h3>
-                  <button className="btn btn-secondary" style={{ padding: '4px 12px' }} onClick={() => setIsSniping(false)}>Cancel</button>
+                  <h3 style={{ margin: 0, color: 'var(--primary)' }}><Crosshair size={18} style={{ verticalAlign: 'middle', marginRight: '8px' }}/> Sniping Mode (Active)</h3>
                 </div>
                 <div style={{ display: 'flex', gap: '16px' }}>
                   <div style={{ position: 'relative', flex: 1 }}>

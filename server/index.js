@@ -66,6 +66,24 @@ io.on('connection', (socket) => {
       };
     }
 
+    const emitRoomUpdate = (rid) => {
+      const r = rooms[rid];
+      if (!r) return;
+      const sanitizedChain = r.chain.map((item, index) => {
+        if (index === r.chain.length - 1 || item.revealCast) return item;
+        return {
+          ...item,
+          anime: { ...item.anime, seiyuus: [] } // Strip massive historical payloads
+        };
+      });
+      io.to(rid).emit('room_state_update', {
+        ...r,
+        chain: sanitizedChain,
+        usedAnimeIds: Array.from(r.usedAnimeIds),
+        timerInterval: undefined
+      });
+    };
+
     const room = rooms[roomId];
 
     // Check password
@@ -86,11 +104,7 @@ io.on('connection', (socket) => {
     }
 
     // Send room state back
-    io.to(roomId).emit('room_state_update', {
-      ...room,
-      usedAnimeIds: Array.from(room.usedAnimeIds),
-      timerInterval: undefined // don't send interval object
-    });
+    emitRoomUpdate(roomId);
 
     broadcastLobbies();
   });
@@ -99,11 +113,7 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (room && room.status === 'waiting') {
       room.readyPlayers[socket.id] = !room.readyPlayers[socket.id];
-      io.to(roomId).emit('room_state_update', {
-        ...room,
-        usedAnimeIds: Array.from(room.usedAnimeIds),
-        timerInterval: undefined
-      });
+      emitRoomUpdate(roomId);
     }
   });
 
@@ -118,11 +128,7 @@ io.on('connection', (socket) => {
           room.timer = 45;
           startTurnTimer(roomId);
           io.to(roomId).emit('game_started');
-          io.to(roomId).emit('room_state_update', {
-            ...room,
-            usedAnimeIds: Array.from(room.usedAnimeIds),
-            timerInterval: undefined
-          });
+          emitRoomUpdate(roomId);
           broadcastLobbies();
         }
       }
@@ -148,19 +154,25 @@ io.on('connection', (socket) => {
       room.skipUsedThisTurn = true;
       room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
       room.timer = 45;
-      io.to(roomId).emit('room_state_update', { ...room, usedAnimeIds: Array.from(room.usedAnimeIds), timerInterval: undefined });
+      const playerName = room.players.find(p => p.id === socket.id)?.name;
+      io.to(roomId).emit('notification', { message: `${playerName} passed their turn!` });
+      emitRoomUpdate(roomId);
     } else if (type === 'addTime') {
       if (!myTurn) return socket.emit('turn_error', { message: 'Not your turn' });
       room.lifelines[socket.id].addTime = false;
       room.timer += 30;
+      const playerName = room.players.find(p => p.id === socket.id)?.name;
+      io.to(roomId).emit('notification', { message: `${playerName} added +30s to the clock!` });
       io.to(roomId).emit('timer_tick', room.timer);
-      io.to(roomId).emit('room_state_update', { ...room, usedAnimeIds: Array.from(room.usedAnimeIds), timerInterval: undefined });
+      emitRoomUpdate(roomId);
     } else if (type === 'revealCast') {
       room.lifelines[socket.id].revealCast = false;
       if (room.chain.length > 0) {
         room.chain[room.chain.length - 1].revealCast = true;
       }
-      io.to(roomId).emit('room_state_update', { ...room, usedAnimeIds: Array.from(room.usedAnimeIds), timerInterval: undefined });
+      const playerName = room.players.find(p => p.id === socket.id)?.name;
+      io.to(roomId).emit('notification', { message: `${playerName} revealed the cast!` });
+      emitRoomUpdate(roomId);
     }
   });
 
@@ -207,6 +219,8 @@ io.on('connection', (socket) => {
             isValid = true;
             linkingSeiyuus = [matchedSeiyuu];
             room.lifelines[socket.id].snipe = false;
+            const playerName = room.players.find(p => p.id === socket.id)?.name;
+            io.to(roomId).emit('notification', { message: `${playerName} sniped ${matchedSeiyuu.name.full}!` });
           } else {
             isValid = false;
             turnErrorMsg = 'The sniped seiyuu is not in this anime!';
@@ -252,7 +266,7 @@ io.on('connection', (socket) => {
         gameOver(roomId, (room.currentTurnIndex + 1) % 2); // other player wins
       } else {
         io.to(roomId).emit('play_penalty', { playerId: socket.id, message: `${turnErrorMsg} (-3s)`, newTimer: room.timer });
-        io.to(roomId).emit('room_state_update', { ...room, usedAnimeIds: Array.from(room.usedAnimeIds), timerInterval: undefined });
+        emitRoomUpdate(roomId);
       }
     } else {
       // Valid move!
@@ -280,7 +294,7 @@ io.on('connection', (socket) => {
         linkingSeiyuus,
         playerId: socket.id 
       });
-      io.to(roomId).emit('room_state_update', { ...room, usedAnimeIds: Array.from(room.usedAnimeIds), timerInterval: undefined });
+      emitRoomUpdate(roomId);
     }
   });
 
@@ -298,7 +312,7 @@ io.on('connection', (socket) => {
           gameOver(roomId, 0); // remaining player wins
         } else {
           // If in lobby, push update natively to reflect new host
-          io.to(roomId).emit('room_state_update', { ...room, usedAnimeIds: Array.from(room.usedAnimeIds), timerInterval: undefined });
+          emitRoomUpdate(roomId);
         }
       }
       broadcastLobbies();
@@ -323,11 +337,8 @@ io.on('connection', (socket) => {
       Object.keys(room.lifelines).forEach(id => {
         room.lifelines[id] = { skip: true, addTime: true, revealCast: true, snipe: true };
       });
-      io.to(roomId).emit('room_state_update', { 
-        ...room, 
-        usedAnimeIds: Array.from(room.usedAnimeIds), 
-        timerInterval: undefined 
-      });
+      
+      emitRoomUpdate(roomId);
       broadcastLobbies();
     }
   });
