@@ -16,7 +16,10 @@ const io = new Server(server, {
   }
 });
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
+
+// Serve Static Frontend (for Render/Production)
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 // Load Anime Database
 let anilistData = { anime: {}, seiyuus: {} };
@@ -28,18 +31,7 @@ if (fs.existsSync(dbPath)) {
   console.error("CRITICAL: anilist_data.json not found!");
 }
 
-// Auto-reload DB when scraper updates the file
-fs.watchFile(dbPath, (curr, prev) => {
-  if (curr.mtime > prev.mtime) {
-    try {
-      const newData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-      anilistData = newData;
-      console.log(`📡 DB Auto-reloaded: ${Object.keys(anilistData.anime).length} anime`);
-    } catch (e) {
-      console.error("Failed to auto-reload DB (likely file is being written):", e.message);
-    }
-  }
-});
+// Loads DB once at startup. Automatic reload disabled to prevent hangs on Render.
 
 // Stores current active rooms
 const rooms = {};
@@ -417,6 +409,11 @@ function gameOver(roomId, winningPlayerIndex) {
   io.to(roomId).emit('game_over', { winner: winner });
   io.to(roomId).emit('room_state_update', { ...room, usedAnimeIds: Array.from(room.usedAnimeIds), timerInterval: undefined });
 }
+
+// Catch-all for SPA
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+});
 
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);

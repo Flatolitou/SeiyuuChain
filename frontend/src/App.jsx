@@ -8,7 +8,7 @@ import { initDb } from './api/localDb';
 
 // Connect to the server
 // Uses the environment variable if provided (for production), otherwise local dev server
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? window.location.origin : 'http://localhost:3001');
 const socket = io(SERVER_URL);
 
 function App() {
@@ -17,9 +17,10 @@ function App() {
   const [playerName, setPlayerName] = useState('');
   const [playerId, setPlayerId] = useState(socket.id);
   const [matchWinner, setMatchWinner] = useState(null);
+  const [isConnected, setIsConnected] = useState(socket.connected);
   
   // Custom Toast state
-  const [toast, setToast] = useState(null); // { message: string, type: 'error' | 'success' }
+  const [toast, setToast] = useState(null); // { message: string, type: 'error' | 'success', persistent?: boolean }
 
   const showToast = (message, type = 'error') => {
     setToast({ message, type });
@@ -31,6 +32,27 @@ function App() {
     
     socket.on('connect', () => {
       setPlayerId(socket.id);
+      setIsConnected(true);
+      setToast(null); // Clear connection error toasts
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      setIsConnected(false);
+      
+      // If we are in a game or lobby, this disconnect (likely a server restart) 
+      // means the room is gone on the server.
+      if (gameState !== 'home' && gameState !== 'lobby_browser') {
+        showToast("Connection to server lost. Rooms may have been reset.", 'error');
+        setGameState('lobby_browser');
+        setRoomData(null);
+      } else {
+        showToast("Lost connection to server...", 'error');
+      }
+    });
+
+    socket.on('connect_error', () => {
+      showToast("Cannot connect to server. Retrying...", 'error');
     });
 
     socket.on('room_state_update', (data) => {
@@ -58,6 +80,8 @@ function App() {
 
     return () => {
       socket.off('connect');
+      socket.off('disconnect');
+      socket.off('connect_error');
       socket.off('room_state_update');
       socket.off('game_started');
       socket.off('game_over');
