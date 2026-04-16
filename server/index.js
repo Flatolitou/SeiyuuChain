@@ -23,6 +23,7 @@ app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 // Render Keep-Alive / Health Check
 app.get('/ping', (req, res) => {
+  console.log(`[${new Date().toISOString()}] Heartbeat received`);
   res.status(200).send('pong');
 });
 
