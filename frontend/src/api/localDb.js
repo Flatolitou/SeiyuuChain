@@ -23,8 +23,9 @@ export async function initDb() {
 
     fuse = new Fuse(searchData, {
       keys: ['titleRomaji', 'titleEnglish'],
-      threshold: 0.3,
-      limit: 10
+      threshold: 0.4,
+      ignoreLocation: true,
+      limit: 15
     });
 
     console.log("Local DB initialized with", Object.keys(db.anime).length, "anime.");
