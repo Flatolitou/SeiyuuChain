@@ -8,8 +8,12 @@ import { initDb } from './api/localDb';
 
 // Connect to the server
 // Uses the environment variable if provided (for production), otherwise local dev server
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? window.location.origin : 'http://localhost:3001');
-const socket = io(SERVER_URL);
+// Priority: Environment Variable -> Localhost (Dev) -> Current Origin (Monolith fallback)
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 
+  (import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin);
+const socket = io(SERVER_URL, {
+  transports: ['websocket', 'polling'] // Ensure compatibility
+});
 
 function App() {
   const [gameState, setGameState] = useState('home'); // home, lobby_browser, room_lobby, playing, finished

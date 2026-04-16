@@ -23,7 +23,7 @@ app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
 // Load Anime Database
 let anilistData = { anime: {}, seiyuus: {} };
-const dbPath = path.join(__dirname, '../frontend/public/anilist_data.json');
+const dbPath = path.join(__dirname, 'anilist_data.json');
 if (fs.existsSync(dbPath)) {
   anilistData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
   console.log(`Server loaded DB: ${Object.keys(anilistData.anime).length} anime`);
@@ -447,9 +447,18 @@ function gameOver(roomId, winningPlayerIndex) {
   io.to(roomId).emit('room_state_update', { ...room, usedAnimeIds: Array.from(room.usedAnimeIds), timerInterval: undefined });
 }
 
-// Catch-all for SPA
+// Catch-all for SPA (fallback)
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy', database: Object.keys(anilistData.anime).length });
+});
+
 app.get('/*path', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  const indexPath = path.join(__dirname, '../frontend/dist/index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(200).send("SeiyuuChain Server is running. (Frontend not bundled)");
+  }
 });
 
 server.listen(PORT, () => {
