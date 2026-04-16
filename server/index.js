@@ -282,13 +282,20 @@ io.on('connection', (socket) => {
     if (!isValid) {
       // Penalty: Reduce timer by 3s
       room.timer -= 3;
+      
+      let rescued = false;
       if (room.timer <= 0) {
-        room.timer = 0;
-        gameOver(roomId, (room.currentTurnIndex + 1) % 2); // other player wins
-      } else {
-        io.to(roomId).emit('play_penalty', { playerId: socket.id, message: `${turnErrorMsg} (-3s)`, newTimer: room.timer });
-        emitRoomUpdate(roomId);
+        rescued = checkAutoLifelines(roomId);
+        if (!rescued) {
+          room.timer = 0;
+          gameOver(roomId, (room.currentTurnIndex + 1) % 2); // other player wins
+          return;
+        }
       }
+      
+      // Send penalty message (even if rescued, so user knows move was invalid)
+      io.to(roomId).emit('play_penalty', { playerId: socket.id, message: `${turnErrorMsg} (-3s)`, newTimer: room.timer });
+      emitRoomUpdate(roomId);
     } else {
       // Valid move!
       room.usedAnimeIds.add(animeId);
@@ -381,6 +388,34 @@ io.on('connection', (socket) => {
   });
 });
 
+function checkAutoLifelines(roomId) {
+  const room = rooms[roomId];
+  if (!room) return false;
+  
+  const currentPlayerId = room.players[room.currentTurnIndex]?.id;
+  const lifelines = room.lifelines[currentPlayerId];
+
+  if (lifelines?.addTime) {
+    lifelines.addTime = false;
+    room.timer = 30;
+    io.to(roomId).emit('notification', { message: `Almost out of time! ${room.players[room.currentTurnIndex].name}'s +30s lifeline was used automatically.` });
+    io.to(roomId).emit('timer_tick', room.timer);
+    emitRoomUpdate(roomId);
+    return true;
+  } else if (lifelines?.skip && !room.skipUsedThisTurn) {
+    lifelines.skip = false;
+    room.skipUsedThisTurn = true;
+    const pIndex = room.currentTurnIndex;
+    room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
+    room.timer = 45;
+    io.to(roomId).emit('notification', { message: `Out of time! ${room.players[pIndex].name} automatically used skip.` });
+    io.to(roomId).emit('timer_tick', room.timer);
+    emitRoomUpdate(roomId);
+    return true;
+  }
+  return false;
+}
+
 function startTurnTimer(roomId) {
   const room = rooms[roomId];
   if (!room) return;
@@ -390,31 +425,11 @@ function startTurnTimer(roomId) {
     room.timer -= 1;
     io.to(roomId).emit('timer_tick', room.timer);
     if (room.timer <= 0) {
-      const currentPlayerId = room.players[room.currentTurnIndex]?.id;
-      const lifelines = room.lifelines[currentPlayerId];
-
-      if (lifelines?.addTime) {
-        lifelines.addTime = false;
-        room.timer = 30;
-        io.to(roomId).emit('notification', { message: `Time's up! ${room.players[room.currentTurnIndex].name}'s +30s lifeline was used automatically.` });
-        io.to(roomId).emit('timer_tick', room.timer);
-        emitRoomUpdate(roomId);
-        return;
-      } else if (lifelines?.skip && !room.skipUsedThisTurn) {
-        lifelines.skip = false;
-        room.skipUsedThisTurn = true;
-        const pIndex = room.currentTurnIndex;
-        room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
-        room.timer = 45;
-        io.to(roomId).emit('notification', { message: `Time's up! ${room.players[pIndex].name} automatically used skip.` });
-        io.to(roomId).emit('timer_tick', room.timer);
-        emitRoomUpdate(roomId);
-        return;
+      if (!checkAutoLifelines(roomId)) {
+        // Game over by timeout
+        const winningIndex = (room.currentTurnIndex + 1) % 2;
+        gameOver(roomId, winningIndex);
       }
-
-      // Game over by timeout
-      const winningIndex = (room.currentTurnIndex + 1) % 2;
-      gameOver(roomId, winningIndex);
     }
   }, 1000);
 }
