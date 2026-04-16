@@ -26,7 +26,7 @@ const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
         boxShadow: '0 4px 20px rgba(0,0,0,0.2)'
       }}>
         <div style={{ position: 'relative' }}>
-          <div style={{ position: 'absolute', top: '-8px', left: '-8px', fontWeight: 900, fontSize: '1.4rem', color: 'var(--primary)', opacity: 0.8 }}>
+          <div style={{ position: 'absolute', top: '-8px', left: '-8px', fontWeight: 900, fontSize: '1.4rem', color: 'var(--primary-light)', opacity: 0.8 }}>
             #{turnNumber}
           </div>
           <h3 style={{ textAlign: 'center', fontSize: '1.6rem', padding: '0 40px 12px 40px', marginBottom: '16px', borderBottom: '1px solid var(--glass-border)', wordBreak: 'break-word' }}>
@@ -89,7 +89,7 @@ const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
                         </div>
 
                         {/* Character Name */}
-                        <div style={{ fontStyle: 'italic', color: 'var(--primary)', fontSize: '1.1rem', wordBreak: 'break-word', lineHeight: '1.4' }}>
+                        <div style={{ fontStyle: 'italic', color: 'var(--primary-light)', fontSize: '1.1rem', wordBreak: 'break-word', lineHeight: '1.4' }}>
                           as {lSeiyuu.characterNames ? lSeiyuu.characterNames.join(', ') : lSeiyuu.characterName}
                         </div>
                       </div>

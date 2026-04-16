@@ -390,6 +390,28 @@ function startTurnTimer(roomId) {
     room.timer -= 1;
     io.to(roomId).emit('timer_tick', room.timer);
     if (room.timer <= 0) {
+      const currentPlayerId = room.players[room.currentTurnIndex]?.id;
+      const lifelines = room.lifelines[currentPlayerId];
+
+      if (lifelines?.addTime) {
+        lifelines.addTime = false;
+        room.timer = 30;
+        io.to(roomId).emit('notification', { message: `Time's up! ${room.players[room.currentTurnIndex].name}'s +30s lifeline was used automatically.` });
+        io.to(roomId).emit('timer_tick', room.timer);
+        emitRoomUpdate(roomId);
+        return;
+      } else if (lifelines?.skip && !room.skipUsedThisTurn) {
+        lifelines.skip = false;
+        room.skipUsedThisTurn = true;
+        const pIndex = room.currentTurnIndex;
+        room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
+        room.timer = 45;
+        io.to(roomId).emit('notification', { message: `Time's up! ${room.players[pIndex].name} automatically used skip.` });
+        io.to(roomId).emit('timer_tick', room.timer);
+        emitRoomUpdate(roomId);
+        return;
+      }
+
       // Game over by timeout
       const winningIndex = (room.currentTurnIndex + 1) % 2;
       gameOver(roomId, winningIndex);
