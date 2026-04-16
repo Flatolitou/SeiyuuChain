@@ -8,12 +8,8 @@ import { initDb } from './api/localDb';
 
 // Connect to the server
 // Uses the environment variable if provided (for production), otherwise local dev server
-// Priority: Environment Variable -> Localhost (Dev) -> Current Origin (Monolith fallback)
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 
-  (import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin);
-const socket = io(SERVER_URL, {
-  transports: ['websocket', 'polling'] // Ensure compatibility
-});
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? window.location.origin : 'http://localhost:3001');
+const socket = io(SERVER_URL);
 
 function App() {
   const [gameState, setGameState] = useState('home'); // home, lobby_browser, room_lobby, playing, finished
@@ -30,6 +26,22 @@ function App() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  // Heartbeat ping to keep Render server awake
+  useEffect(() => {
+    const keepAlive = () => {
+      fetch(`${SERVER_URL}/ping`)
+        .catch(err => console.debug('Heartbeat check (expected if offline):', err));
+    };
+
+    // Ping every 10 minutes (600,000 ms)
+    const interval = setInterval(keepAlive, 600000);
+    
+    // Initial ping on mount
+    keepAlive();
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (socket.id) setPlayerId(socket.id);
