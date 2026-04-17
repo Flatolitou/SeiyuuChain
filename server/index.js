@@ -106,8 +106,8 @@ io.on('connection', (socket) => {
       rooms[roomId] = {
         id: roomId,
         password: password || '',
-        status: 'waiting', // waiting, playing, finished
-        players: [], // array of { id: socket.id, name: playerName }
+        status: 'waiting',
+        players: [],
         timerInterval: null,
         timer: 45,
         currentTurnIndex: 0,
@@ -117,9 +117,10 @@ io.on('connection', (socket) => {
         readyPlayers: {},
         lifelines: {},
         skipUsedThisTurn: false,
-        spectators: [], // array of { id: socket.id, name: playerName }
-        messages: [] // array of { type: 'system'|'user', sender: string, text: string, timestamp: number }
+        spectators: [],
+        messages: []
       };
+      console.log(`[ROOM CREATED] ID: ${roomId} | Password: ${password || '(None)'}`);
     }
 
     const room = rooms[roomId];

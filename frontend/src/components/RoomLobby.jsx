@@ -38,7 +38,13 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
       }}>
         
         <div>
-          <h1 className="title-gradient" style={{ fontSize: '2.5rem', marginBottom: '8px' }}>Room: {roomData.id}</h1>
+          <h1 className="title-gradient" style={{ fontSize: '2.5rem', marginBottom: '4px' }}>Room: {roomData.id}</h1>
+          {roomData.password && (
+            <div style={{ color: 'var(--text-dim)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', marginBottom: '12px' }}>
+              <ShieldCheck size={14} color="var(--primary)" /> 
+              Password: <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{roomData.password}</span>
+            </div>
+          )}
           {roomData.lastMatchResult ? (
             <div className="glass-panel animate-fade-in" style={{ 
               padding: '12px 24px', 
