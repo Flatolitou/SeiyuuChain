@@ -24,8 +24,7 @@ export async function initDb() {
     fuse = new Fuse(searchData, {
       keys: ['titleRomaji', 'titleEnglish'],
       threshold: 0.4,
-      ignoreLocation: true,
-      limit: 15
+      ignoreLocation: true
     });
 
     console.log("Local DB initialized with", Object.keys(db.anime).length, "anime.");
@@ -38,7 +37,7 @@ export async function initDb() {
 
 export function searchAnimeLocal(query) {
   if (!fuse) return [];
-  const results = fuse.search(query);
+  const results = fuse.search(query, { limit: 15 });
   return results.map(res => {
     const anime = db.anime[res.item.id];
     return {

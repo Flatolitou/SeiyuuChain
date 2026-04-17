@@ -1,8 +1,11 @@
-import { Users, CheckCircle, ShieldCheck, LogOut } from 'lucide-react';
+import { Users, CheckCircle, ShieldCheck, LogOut, RefreshCw, Eye } from 'lucide-react';
+import ChatBox from './ChatBox';
 
-export default function RoomLobby({ roomData, playerId, onToggleReady, onStartGame, onLeaveRoom }) {
-  const isHost = roomData.players[0]?.id === playerId;
-  const me = roomData.players.find(p => p.id === playerId);
+export default function RoomLobby({ roomData, playerId, socket, onToggleReady, onStartGame, onLeaveRoom }) {
+  const isSpectator = roomData.spectators?.some(s => s.id === playerId);
+  const isHost = !isSpectator && roomData.players[0]?.id === playerId;
+  const me = (roomData.players.find(p => p.id === playerId) || roomData.spectators?.find(s => s.id === playerId));
+  
   const p1 = roomData.players[0];
   const p2 = roomData.players[1];
 
@@ -12,11 +15,18 @@ export default function RoomLobby({ roomData, playerId, onToggleReady, onStartGa
   return (
     <div style={{
       display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
       height: '100vh',
-      width: '100vw'
+      width: '100vw',
+      overflow: 'hidden'
     }}>
+      {/* Main Lobby Area */}
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px'
+      }}>
       <div className="glass-panel animate-fade-in" style={{
         padding: '40px',
         width: '100%',
@@ -29,7 +39,23 @@ export default function RoomLobby({ roomData, playerId, onToggleReady, onStartGa
         
         <div>
           <h1 className="title-gradient" style={{ fontSize: '2.5rem', marginBottom: '8px' }}>Room: {roomData.id}</h1>
-          <p style={{ color: 'var(--text-dim)' }}>Waiting to start...</p>
+          {roomData.lastMatchResult ? (
+            <div className="glass-panel animate-fade-in" style={{ 
+              padding: '12px 24px', 
+              background: 'rgba(139, 92, 246, 0.1)', 
+              borderColor: 'var(--primary)',
+              color: 'var(--primary)',
+              fontWeight: 700,
+              fontSize: '1.1rem',
+              borderRadius: '12px',
+              marginBottom: '16px',
+              borderStyle: 'dashed'
+            }}>
+              🏆 LAST WINNER: {roomData.lastMatchResult.winnerName}
+            </div>
+          ) : (
+            <p style={{ color: 'var(--text-dim)' }}>Waiting to start...</p>
+          )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', margin: '20px 0' }}>
@@ -84,27 +110,32 @@ export default function RoomLobby({ roomData, playerId, onToggleReady, onStartGa
           </div>
         </div>
 
-        {/* Actions */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {isHost ? (
-            <button 
-              className="btn" 
-              disabled={!p2Ready || !p2}
-              onClick={onStartGame}
-              style={{ padding: '16px', fontSize: '1.2rem', opacity: (!p2Ready || !p2) ? 0.5 : 1 }}
-            >
-              Start Game
-            </button>
-          ) : (
-            <button 
-              className={`btn ${p2Ready ? 'btn-secondary' : ''}`} 
-              onClick={onToggleReady}
-              style={{ padding: '16px', fontSize: '1.2rem', background: p2Ready ? 'transparent' : 'var(--success)' }}
-            >
-              {p2Ready ? 'Unready' : 'Ready Up'}
-            </button>
-          )}
+        {/* Actions - Only for Players */}
+        {!isSpectator && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {isHost ? (
+              <button 
+                className="btn" 
+                disabled={!p2Ready || !p2}
+                onClick={onStartGame}
+                style={{ padding: '16px', fontSize: '1.2rem', opacity: (!p2Ready || !p2) ? 0.5 : 1 }}
+              >
+                Start Game
+              </button>
+            ) : (
+              <button 
+                className={`btn ${p2Ready ? 'btn-secondary' : ''}`} 
+                onClick={onToggleReady}
+                style={{ padding: '16px', fontSize: '1.2rem', background: p2Ready ? 'transparent' : 'var(--success)' }}
+              >
+                {p2Ready ? 'Unready' : 'Ready Up'}
+              </button>
+            )}
+          </div>
+        )}
 
+        {/* Global Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
           <button 
             className="btn btn-secondary" 
             onClick={onLeaveRoom}
@@ -112,9 +143,24 @@ export default function RoomLobby({ roomData, playerId, onToggleReady, onStartGa
           >
             <LogOut size={18} /> Leave Room
           </button>
+
+          {/* Role Swap Button */}
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => socket.emit('switch_role', { roomId: roomData.id, to: isSpectator ? 'player' : 'spectator' })}
+            style={{ padding: '12px', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (isSpectator && roomData.players.length >= 2) ? 0.5 : 1 }}
+            disabled={isSpectator && roomData.players.length >= 2} 
+          >
+            {isSpectator ? <RefreshCw size={18} /> : <Eye size={18} />}
+            {isSpectator ? (roomData.players.length >= 2 ? 'Room Full' : 'Become Player') : 'Become Spectator'}
+          </button>
         </div>
 
       </div>
+      </div>
+
+      {/* Chat Sidebar */}
+      <ChatBox roomData={roomData} socket={socket} playerId={playerId} />
     </div>
   );
 }

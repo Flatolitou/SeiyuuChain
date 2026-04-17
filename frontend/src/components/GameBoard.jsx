@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import SearchAnime from './SearchAnime';
-import { Timer, AlertTriangle, ArrowUp, X, LogOut, FastForward, Clock, Eye, Crosshair } from 'lucide-react';
+import SeiyuuSearcher from './SeiyuuSearcher';
+import { Timer, AlertTriangle, ArrowUp, X, LogOut, FastForward, Clock, Eye, Crosshair, Search, RefreshCw } from 'lucide-react';
 import TimerDisplay from './game/TimerDisplay';
 import AnimeChainItem from './game/AnimeChainItem';
 import { getAnimeWithSeiyuusLocal } from '../api/localDb';
+import ChatBox from './ChatBox';
 
 export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLeaveRoom }) {
   const [penaltyMessage, setPenaltyMessage] = useState(null);
   const [notification, setNotification] = useState(null);
+  
+  const isSpectator = roomData.spectators?.some(s => s.id === playerId);
+  const isMyTurn = !isSpectator && roomData.players[roomData.currentTurnIndex]?.id === playerId;
+  
   const [isSniping, setIsSniping] = useState(false);
   const [snipeSeiyuuId, setSnipeSeiyuuId] = useState('');
 
@@ -29,8 +35,7 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
     };
   }, [socket]);
 
-  const isMyTurn = roomData.players[roomData.currentTurnIndex]?.id === playerId;
-  const me = roomData.players.find(p => p.id === playerId);
+  const me = (roomData.players.find(p => p.id === playerId) || roomData.spectators?.find(s => s.id === playerId));
   const opponent = roomData.players.find(p => p.id !== playerId);
   const myLifelines = roomData.lifelines?.[playerId] || {};
 
@@ -66,8 +71,11 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
   const currentAnimeSeiyuus = currentAnimeData ? currentAnimeData.seiyuus : [];
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
       
+    <div style={{ flex: 1, padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      
+      <div style={{ maxWidth: '800px', width: '100%', margin: '0 auto' }}>
       {/* Header / StatusBar */}
       <header className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', marginBottom: '24px' }}>
         <div>
@@ -78,24 +86,23 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-          <div style={{ textAlign: 'center', color: isMyTurn ? 'var(--primary)' : 'var(--text-dim)' }}>
-            <div style={{ fontWeight: isMyTurn ? 800 : 400 }}>{me?.name} (You)</div>
+          <div style={{ textAlign: 'center', color: roomData.players[0] ? (roomData.currentTurnIndex === 0 ? 'var(--primary)' : 'var(--text-dim)') : 'var(--text-dim)' }}>
+            <div style={{ fontWeight: roomData.currentTurnIndex === 0 ? 800 : 400, fontSize: roomData.currentTurnIndex === 0 ? '1.1rem' : '0.9rem' }}>
+              {roomData.players[0]?.name || 'Player 1'} {roomData.players[0]?.id === playerId ? '(You)' : ''}
+            </div>
           </div>
           
           <TimerDisplay socket={socket} initialTimer={roomData.timer} />
 
-          <div style={{ textAlign: 'center', color: !isMyTurn ? 'var(--secondary)' : 'var(--text-dim)' }}>
-            <div style={{ fontWeight: !isMyTurn ? 800 : 400, marginBottom: '4px' }}>{opponent?.name || 'Waiting...'}</div>
-            {opponent && roomData.lifelines?.[opponent.id] && (
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '6px' }}>
-                <FastForward size={14} opacity={roomData.lifelines[opponent.id].skip ? 1 : 0.2} />
-                <Clock size={14} opacity={roomData.lifelines[opponent.id].addTime ? 1 : 0.2} />
-                <Eye size={14} opacity={roomData.lifelines[opponent.id].revealCast ? 1 : 0.2} />
-                <Crosshair size={14} opacity={roomData.lifelines[opponent.id].snipe ? 1 : 0.2} />
-              </div>
-            )}
+          <div style={{ textAlign: 'center', color: roomData.players[1] ? (roomData.currentTurnIndex === 1 ? 'var(--secondary)' : 'var(--text-dim)') : 'var(--text-dim)' }}>
+             <div style={{ fontWeight: roomData.currentTurnIndex === 1 ? 800 : 400, fontSize: roomData.currentTurnIndex === 1 ? '1.1rem' : '0.9rem' }}>
+              {roomData.players[1]?.name || 'Player 2'} {roomData.players[1]?.id === playerId ? '(You)' : ''}
+            </div>
           </div>
+        </div>
           
+          {/* Role Swap Button removed for ongoing matches */}
+
           <button 
             className="btn btn-secondary" 
             onClick={onLeaveRoom}
@@ -103,7 +110,6 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
           >
             <LogOut size={18} /> Leave
           </button>
-        </div>
       </header>
 
       {/* Lifelines */}
@@ -150,63 +156,59 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
       )}
 
       {/* Input Area */}
-      <div style={{ marginBottom: '24px', position: 'relative', zIndex: 100 }}>
-        {penaltyMessage && (
-        <div className="glass-panel animate-fade-in" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: 'var(--danger)', padding: '12px 24px', marginBottom: '24px', textAlign: 'center', fontWeight: 'bold' }}>
-          {penaltyMessage}
-        </div>
-      )}
-      
-      {notification && (
-        <div className="glass-panel animate-fade-in" style={{ backgroundColor: 'rgba(56, 189, 248, 0.2)', borderColor: '#38bdf8', padding: '12px 24px', marginBottom: '24px', textAlign: 'center', fontWeight: 'bold', color: 'white' }}>
-          {notification}
-        </div>
-      )}
+      {!isSpectator && (
+        <div style={{ marginBottom: '24px', position: 'relative', zIndex: 100 }}>
+          {penaltyMessage && (
+          <div className="glass-panel animate-fade-in" style={{ backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: 'var(--danger)', padding: '12px 24px', marginBottom: '24px', textAlign: 'center', fontWeight: 'bold' }}>
+            {penaltyMessage}
+          </div>
+        )}
         
-        <div className="glass-panel" style={{ padding: '16px' }}>
-          {roomData.status === 'waiting' ? (
-            <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-dim)' }}>
-              Waiting...
-            </div>
-          ) : isMyTurn ? (
-            isSniping ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0, color: 'var(--primary)' }}><Crosshair size={18} style={{ verticalAlign: 'middle', marginRight: '8px' }}/> Sniping Mode (Active)</h3>
-                </div>
-                <div style={{ display: 'flex', gap: '16px' }}>
-                  <div style={{ position: 'relative', flex: 1 }}>
-                    <select 
-                      className="input-field" 
-                      style={{ width: '100%', backgroundColor: 'var(--bg-dark)', color: 'white', border: '1px solid var(--glass-border)', cursor: 'pointer', appearance: 'none', paddingRight: '40px' }} 
-                      value={snipeSeiyuuId} 
-                      onChange={e => setSnipeSeiyuuId(e.target.value)}
-                    >
-                      <option value="" disabled hidden>Select a Seiyuu...</option>
-                      {currentAnimeSeiyuus.map(s => (
-                        <option key={s.id} value={s.id}>{s.name?.full}</option>
-                      ))}
-                    </select>
-                    {/* Custom SVG arrow to keep styling fully unified and positioned safely away from the box edge */}
-                    <div style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-dim)' }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </div>
+        {notification && (
+          <div className="glass-panel animate-fade-in" style={{ backgroundColor: 'rgba(56, 189, 248, 0.2)', borderColor: '#38bdf8', padding: '12px 24px', marginBottom: '24px', textAlign: 'center', fontWeight: 'bold', color: 'white' }}>
+            {notification}
+          </div>
+        )}
+          
+          <div className="glass-panel" style={{ padding: '16px' }}>
+            {roomData.status === 'waiting' ? (
+              <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-dim)' }}>
+                Waiting...
+              </div>
+            ) : isMyTurn ? (
+              isSniping ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0, color: 'var(--primary)' }}><Crosshair size={18} style={{ verticalAlign: 'middle', marginRight: '8px' }}/> Sniping Mode (Active)</h3>
+                  </div>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    <SeiyuuSearcher 
+                      seiyuus={currentAnimeSeiyuus} 
+                      onSelect={setSnipeSeiyuuId} 
+                    />
+                  </div>
+                  <div>
+                    <SearchAnime onSelect={handleSnipePlay} />
                   </div>
                 </div>
-                <div>
-                  <SearchAnime onSelect={handleSnipePlay} />
-                </div>
-              </div>
+              ) : (
+                <SearchAnime onSelect={(anime) => socket.emit('play_turn', { roomId: roomData.id, animeId: anime.id })} />
+              )
             ) : (
-              <SearchAnime onSelect={(anime) => socket.emit('play_turn', { roomId: roomData.id, animeId: anime.id })} />
-            )
-          ) : (
-            <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-dim)' }}>
-              Waiting for opponent's move...
-            </div>
-          )}
+              <div style={{ textAlign: 'center', padding: '12px', color: 'var(--text-dim)' }}>
+                Waiting for opponent's move...
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
+
+      {isSpectator && (
+        <div className="glass-panel" style={{ padding: '16px', marginBottom: '24px', textAlign: 'center', color: 'var(--primary)', fontWeight: 600 }}>
+          <Eye size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
+          You are currently spectating this match.
+        </div>
+      )}
 
       {/* Chain Area */}
       <div className="glass-panel" style={{ flex: 1, padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -215,13 +217,8 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
             <h2>Waiting for opponent to join...</h2>
             <p>Share the room name: <strong>{roomData.id}</strong></p>
           </div>
-        ) : roomData.chain.length === 0 ? (
-          <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-dim)' }}>
-            <h3>The chain is empty</h3>
-            {isMyTurn ? <p>You go first! Pick any anime to start.</p> : <p>Waiting for opponent to start...</p>}
-          </div>
         ) : (
-          roomData.chain.slice().reverse().slice(0, 20).map((item, i) => {
+          roomData.chain.slice().reverse().map((item, i, arr) => {
             const originalIndex = roomData.chain.length - 1 - i;
             const isFirst = originalIndex === 0;
             
@@ -234,8 +231,8 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
                   isFirst={isFirst} 
                 />
                 
-                {/* Arrow Up bridge EXCEPT for the relative bottom card of the slice */}
-                {i < 19 && originalIndex > 0 && (
+                {/* Arrow Up bridge EXCEPT for the first logical anime (last in reverse array) */}
+                {i < arr.length - 1 && (
                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: 'var(--text-dim)', margin: '-16px 0' }}>
                     <div style={{ width: '2px', height: '30px', background: 'var(--glass-border)' }}></div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-darker)', width: '32px', height: '32px', borderRadius: '50%', border: '1px solid var(--text-dim)', zIndex: 1 }}>
@@ -249,7 +246,11 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
           })
         )}
       </div>
+    </div>
+    </div>
 
+    {/* Chat Sidebar */}
+    <ChatBox roomData={roomData} socket={socket} playerId={playerId} />
     </div>
   );
 }

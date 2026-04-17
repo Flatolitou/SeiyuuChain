@@ -107,13 +107,32 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                  <h3 style={{ fontSize: '1.3rem', wordBreak: 'break-all' }}>{room.id}</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <h3 style={{ fontSize: '1.3rem', wordBreak: 'break-all', margin: 0 }}>{room.id}</h3>
+                    <div className="badge" style={{ 
+                      alignSelf: 'flex-start', 
+                      background: room.status === 'playing' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                      color: room.status === 'playing' ? 'var(--primary)' : 'var(--success)',
+                      borderColor: room.status === 'playing' ? 'var(--primary)' : 'var(--success)',
+                      fontSize: '0.7rem'
+                    }}>
+                      {room.status === 'playing' ? 'ONGOING' : 'WAITING'}
+                    </div>
+                  </div>
                   {room.hasPassword && <Lock size={18} color="var(--text-dim)" />}
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-dim)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Users size={16} /> 
-                    {room.playerCount} / 2 Players
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-dim)', fontSize: '0.9rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Users size={16} color={room.playerCount >= 2 ? 'var(--text-dim)' : 'var(--success)'} /> 
+                      {room.playerCount} / 2
+                    </div>
+                    {room.spectatorCount > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', opacity: 0.7 }}>
+                        <Gamepad2 size={16} />
+                        {room.spectatorCount} Watching
+                      </div>
+                    )}
                   </div>
                   <ChevronRight size={20} color="var(--primary)" />
                 </div>

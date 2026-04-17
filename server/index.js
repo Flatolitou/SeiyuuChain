@@ -49,17 +49,27 @@ function getRoom(roomId) {
 
 function getPublicRooms() {
   return Object.values(rooms)
-    .filter(r => r.status === 'waiting')
     .map(r => ({
       id: r.id,
       playerCount: r.players.length,
-      hasPassword: r.password !== ''
+      spectatorCount: (r.spectators || []).length,
+      hasPassword: r.password !== '',
+      status: r.status // waiting, playing, finished
     }));
 }
 
 function broadcastLobbies() {
   io.emit('lobbies_update', getPublicRooms());
 }
+
+const addSystemMessage = (roomId, text) => {
+  const r = rooms[roomId];
+  if (!r) return;
+  const msg = { type: 'system', text, timestamp: Date.now() };
+  r.messages.push(msg);
+  if (r.messages.length > 200) r.messages.shift();
+  io.to(roomId).emit('chat_message', msg);
+};
 
 const emitRoomUpdate = (rid) => {
   const r = rooms[rid];
@@ -106,7 +116,9 @@ io.on('connection', (socket) => {
         seiyuuUsageCount: {},
         readyPlayers: {},
         lifelines: {},
-        skipUsedThisTurn: false
+        skipUsedThisTurn: false,
+        spectators: [], // array of { id: socket.id, name: playerName }
+        messages: [] // array of { type: 'system'|'user', sender: string, text: string, timestamp: number }
       };
     }
 
@@ -117,18 +129,27 @@ io.on('connection', (socket) => {
       return socket.emit('room_error', { message: 'Incorrect password' });
     }
 
-    // Check capacity
-    if (room.players.length >= 2 && !room.players.find(p => p.id === socket.id)) {
-      return socket.emit('room_error', { message: 'Room is full' });
-    }
+    // Add player or spectator
+    const isReturningPlayer = room.players.find(p => p.id === socket.id);
+    const isReturningSpectator = room.spectators.find(p => p.id === socket.id);
 
-    // Add player if not already in
-    if (!room.players.find(p => p.id === socket.id)) {
-      room.players.push({ id: socket.id, name: playerName || `Player ${room.players.length + 1}` });
-      room.lifelines[socket.id] = { skip: true, addTime: true, revealCast: true, snipe: true };
+    if (!isReturningPlayer && !isReturningSpectator) {
+      if (room.players.length < 2 && room.status === 'waiting') {
+        room.players.push({ id: socket.id, name: playerName || `Player ${room.players.length + 1}` });
+        room.lifelines[socket.id] = { skip: true, addTime: true, revealCast: true, snipe: true };
+        addSystemMessage(roomId, `${playerName || 'A player'} joined the room.`);
+      } else {
+        room.spectators.push({ id: socket.id, name: playerName || `Spectator ${room.spectators.length + 1}` });
+        addSystemMessage(roomId, `${playerName || 'A spectator'} joined to watch.`);
+      }
+      socket.join(roomId);
+    } else {
       socket.join(roomId);
     }
 
+    // Send history to user
+    socket.emit('chat_history', room.messages);
+    
     // Send room state back
     emitRoomUpdate(roomId);
 
@@ -145,15 +166,71 @@ io.on('connection', (socket) => {
 
   socket.on('start_game', ({ roomId }) => {
     const room = rooms[roomId];
-    if (room && room.status === 'waiting' && room.players.length === 2) {
+    if (room && room.status === 'waiting' && room.players.length >= 1) { // Allow starting even with 1 player
       if (room.players[0].id === socket.id) { // Host
-        const p2Id = room.players[1].id;
-        if (room.readyPlayers[p2Id]) {
+        const p2 = room.players[1];
+        // If there's a P2, they must be ready. If not, host can start alone (practice/spectated mode)
+        if (!p2 || room.readyPlayers[p2.id]) {
           room.status = 'playing';
-          room.currentTurnIndex = Math.random() < 0.5 ? 0 : 1; 
+          room.currentTurnIndex = (p2 && Math.random() < 0.5) ? 1 : 0; 
           room.timer = 45;
           startTurnTimer(roomId);
           io.to(roomId).emit('game_started');
+          addSystemMessage(roomId, "The match has started!");
+          emitRoomUpdate(roomId);
+          broadcastLobbies();
+        }
+      }
+    }
+  });
+
+  socket.on('send_message', ({ roomId, text }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    
+    const player = room.players.find(p => p.id === socket.id) || room.spectators.find(p => p.id === socket.id);
+    if (!player) return;
+
+    const msg = { type: 'user', sender: player.name, text, timestamp: Date.now() };
+    room.messages.push(msg);
+    if (room.messages.length > 200) room.messages.shift();
+    
+    io.to(roomId).emit('chat_message', msg);
+  });
+
+  socket.on('switch_role', ({ roomId, to }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    if (to === 'spectator') {
+      const pIndex = room.players.findIndex(p => p.id === socket.id);
+      if (pIndex !== -1) {
+        const player = room.players.splice(pIndex, 1)[0];
+        room.spectators.push(player);
+        delete room.readyPlayers[socket.id];
+        addSystemMessage(roomId, `${player.name} moved to spectators.`);
+        
+        // If game is playing and only 1 player left or 0, handle it
+        if (room.status === 'playing' && room.players.length < 2) {
+          // In this simple version, if a player leaves/switches during play, it might end the game
+          // But user said "switch ... even in middle of round", so we'll let it stay if at least 1 player
+          if (room.players.length === 0) {
+            gameOver(roomId, -1); // No winner
+          }
+        }
+        
+        emitRoomUpdate(roomId);
+        broadcastLobbies();
+      }
+    } else if (to === 'player') {
+      if (room.players.length < 2) {
+        const sIndex = room.spectators.findIndex(s => s.id === socket.id);
+        if (sIndex !== -1) {
+          const spec = room.spectators.splice(sIndex, 1)[0];
+          room.players.push(spec);
+          room.readyPlayers[socket.id] = false;
+          room.lifelines[spec.id] = room.lifelines[spec.id] || { skip: true, addTime: true, revealCast: true, snipe: true };
+          addSystemMessage(roomId, `${spec.name} is now a player.`);
           emitRoomUpdate(roomId);
           broadcastLobbies();
         }
@@ -343,22 +420,33 @@ io.on('connection', (socket) => {
   const handlePlayerLeave = (socketId, roomId) => {
     const room = rooms[roomId];
     if (!room) return;
+    
+    let leaverName = '';
     const pIndex = room.players.findIndex(p => p.id === socketId);
     if (pIndex !== -1) {
+      leaverName = room.players[pIndex].name;
       room.players.splice(pIndex, 1);
-      if (room.players.length === 0) {
-        clearInterval(room.timerInterval);
-        delete rooms[roomId];
-      } else {
-        if (room.status === 'playing') {
-          gameOver(roomId, 0); // remaining player wins
-        } else {
-          // If in lobby, push update natively to reflect new host
-          emitRoomUpdate(roomId);
-        }
+    } else {
+      const sIndex = room.spectators.findIndex(s => s.id === socketId);
+      if (sIndex !== -1) {
+        leaverName = room.spectators[sIndex].name;
+        room.spectators.splice(sIndex, 1);
       }
-      broadcastLobbies();
     }
+
+    if (room.players.length === 0 && room.spectators.length === 0) {
+      clearInterval(room.timerInterval);
+      delete rooms[roomId];
+    } else {
+      if (room.status === 'playing' && room.players.length === 1) {
+        gameOver(roomId, 0); // last remaining player wins
+      } else if (room.status === 'playing' && room.players.length === 0) {
+        gameOver(roomId, -1);
+      } else {
+        emitRoomUpdate(roomId);
+      }
+    }
+    broadcastLobbies();
   };
 
   socket.on('leave_room', ({ roomId }) => {
@@ -444,13 +532,36 @@ function gameOver(roomId, winningPlayerIndex) {
   const room = rooms[roomId];
   if (!room) return;
   clearInterval(room.timerInterval);
-  room.status = 'finished';
-  room.timer = 0;
   
-  const winner = room.players[winningPlayerIndex];
+  // Try to find the winner in players
+  let winner = null;
+  if (winningPlayerIndex !== -1) {
+    winner = room.players[winningPlayerIndex];
+  }
+
+  room.lastMatchResult = { 
+    winnerId: winner ? winner.id : null, 
+    winnerName: winner ? winner.name : 'Nobody (Draw)',
+    timestamp: Date.now()
+  };
+
+  if (winner) {
+    addSystemMessage(roomId, `Game Over! ${winner.name} won the match!`);
+  } else {
+    addSystemMessage(roomId, `Game Over! The match ended.`);
+  }
+
+  // Reset room for next game
+  room.status = 'waiting';
+  room.timer = 45;
+  room.chain = [];
+  room.usedAnimeIds = new Set();
+  room.seiyuuUsageCount = {};
+  room.readyPlayers = {};
+  room.skipUsedThisTurn = false;
 
   io.to(roomId).emit('game_over', { winner: winner });
-  io.to(roomId).emit('room_state_update', { ...room, usedAnimeIds: Array.from(room.usedAnimeIds), timerInterval: undefined });
+  emitRoomUpdate(roomId);
 }
 
 // Catch-all for SPA

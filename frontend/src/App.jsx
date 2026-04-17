@@ -73,9 +73,6 @@ function App() {
 
     socket.on('room_state_update', (data) => {
       setRoomData(data);
-      if (gameState === 'lobby_browser' || gameState === 'home' || data.status === 'waiting') {
-        setGameState('room_lobby');
-      }
     });
 
     socket.on('game_started', () => {
@@ -83,8 +80,8 @@ function App() {
     });
 
     socket.on('game_over', (data) => {
-      setMatchWinner(data.winner);
-      setGameState('finished');
+      // Just a toast, the room_state_update will handle the view switch
+      showToast(`Game Over! ${data.winner ? data.winner.name + ' won!' : 'Draw!'}`, 'success');
     });
 
     socket.on('room_error', (data) => {
@@ -94,6 +91,19 @@ function App() {
     // Initialize Local DB
     initDb();
 
+    socket.on('chat_history', (history) => {
+      setRoomData(prev => prev ? { ...prev, messages: history } : null);
+    });
+
+    socket.on('chat_message', (msg) => {
+      setRoomData(prev => {
+        if (!prev) return prev;
+        const messages = [...(prev.messages || []), msg];
+        if (messages.length > 200) messages.shift();
+        return { ...prev, messages };
+      });
+    });
+
     return () => {
       socket.off('connect');
       socket.off('disconnect');
@@ -102,8 +112,31 @@ function App() {
       socket.off('game_started');
       socket.off('game_over');
       socket.off('room_error');
+      socket.off('chat_history');
+      socket.off('chat_message');
     };
   }, [gameState]);
+
+  // Robust View Switching Logic based on room state
+  // Robust View Switching Logic based on room state
+  useEffect(() => {
+    if (!roomData) return;
+
+    if (gameState === 'lobby_browser' || gameState === 'home') {
+      // If we just joined, determine where to go
+      if (roomData.status === 'playing') {
+        setGameState('playing');
+      } else if (roomData.status === 'waiting') {
+        setGameState('room_lobby');
+      }
+    } else if (gameState === 'room_lobby' && roomData.status === 'playing') {
+      // Game started
+      setGameState('playing');
+    } else if (roomData.status === 'waiting' && gameState !== 'room_lobby' && gameState !== 'lobby_browser' && gameState !== 'home') {
+      // Game ended or reset - force return to lobby if we are in any game-related state
+      setGameState('room_lobby');
+    }
+  }, [roomData?.status, roomData?.id, gameState]);
 
   const handleSetNickname = (name) => {
     setPlayerName(name);
@@ -170,6 +203,7 @@ function App() {
         <RoomLobby 
           roomData={roomData}
           playerId={playerId}
+          socket={socket}
           onToggleReady={toggleReady}
           onStartGame={startGame}
           onLeaveRoom={leaveRoom}
@@ -183,29 +217,6 @@ function App() {
           onPlayTurn={playTurn} 
           onLeaveRoom={leaveRoom}
         />
-      )}
-      {gameState === 'finished' && roomData && (
-        <div className="glass-panel" style={{ padding: '60px 40px', margin: 'Auto', textAlign: 'center', marginTop: '15vh', maxWidth: '500px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          {matchWinner?.id === playerId ? (
-            <>
-              <h1 style={{ fontSize: '4rem', fontWeight: 900, color: 'var(--success)', textShadow: '0 0 20px rgba(16, 185, 129, 0.4)' }}>VICTORY</h1>
-              <p style={{ marginTop: '16px', fontSize: '1.2rem', color: 'var(--text-light)' }}>You crushed {roomData.players.find(p => p.id !== playerId)?.name}!</p>
-            </>
-          ) : (
-            <>
-              <h1 style={{ fontSize: '4rem', fontWeight: 900, color: 'var(--danger)', textShadow: '0 0 20px rgba(239, 68, 68, 0.4)' }}>DEFEAT</h1>
-              <p style={{ marginTop: '16px', fontSize: '1.2rem', color: 'var(--text-light)' }}>{matchWinner?.name} beat you!</p>
-            </>
-          )}
-
-          <button 
-            className="btn" 
-            style={{ marginTop: '40px', padding: '16px 32px', fontSize: '1.2rem' }}
-            onClick={() => socket.emit('play_again', { roomId: roomData.id })}
-          >
-            Return to Lobby
-          </button>
-        </div>
       )}
 
       <style>{`
