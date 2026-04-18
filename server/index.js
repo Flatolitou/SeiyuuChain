@@ -455,24 +455,6 @@ io.on('connection', (socket) => {
     handlePlayerLeave(socket.id, roomId);
   });
 
-  socket.on('play_again', ({ roomId }) => {
-    const room = rooms[roomId];
-    if (room && room.status === 'finished') {
-      room.status = 'waiting';
-      room.chain = [];
-      room.usedAnimeIds = new Set();
-      room.seiyuuUsageCount = {};
-      room.readyPlayers = {};
-      room.currentTurnIndex = 0;
-      room.skipUsedThisTurn = false;
-      Object.keys(room.lifelines).forEach(id => {
-        room.lifelines[id] = { skip: true, addTime: true, revealCast: true, snipe: true };
-      });
-      
-      emitRoomUpdate(roomId);
-      broadcastLobbies();
-    }
-  });
 
   socket.on('disconnect', () => {
     // Basic disconnect handling
@@ -560,6 +542,11 @@ function gameOver(roomId, winningPlayerIndex) {
   room.seiyuuUsageCount = {};
   room.readyPlayers = {};
   room.skipUsedThisTurn = false;
+  
+  // Reset lifelines for all players for the next game
+  Object.keys(room.lifelines).forEach(id => {
+    room.lifelines[id] = { skip: true, addTime: true, revealCast: true, snipe: true };
+  });
 
   io.to(roomId).emit('game_over', { winner: winner });
   emitRoomUpdate(roomId);
