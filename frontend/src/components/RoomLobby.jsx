@@ -1,7 +1,39 @@
-import { Users, CheckCircle, ShieldCheck, LogOut, RefreshCw, Eye } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, CheckCircle, ShieldCheck, LogOut, RefreshCw, Eye, Settings, X } from 'lucide-react';
 import ChatBox from './ChatBox';
 
 export default function RoomLobby({ roomData, playerId, socket, onToggleReady, onStartGame, onLeaveRoom }) {
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [gameMode, setGameMode] = useState(roomData.settings?.gameMode || 'standard');
+  const [localTimerSetting, setLocalTimerSetting] = useState(roomData.settings?.turnTimer || 45);
+  const [localLifelineSetting, setLocalLifelineSetting] = useState(roomData.settings?.lifelineSeconds || 30);
+  const [localDecayInterval, setLocalDecayInterval] = useState(roomData.settings?.decayInterval || 5);
+  const [localMinTimerCap, setLocalMinTimerCap] = useState(roomData.settings?.minTimerCap || 10);
+
+  useEffect(() => {
+    if (roomData.settings) {
+      if (roomData.settings.gameMode) setGameMode(roomData.settings.gameMode);
+      if (roomData.settings.turnTimer) setLocalTimerSetting(roomData.settings.turnTimer);
+      if (roomData.settings.lifelineSeconds) setLocalLifelineSetting(roomData.settings.lifelineSeconds);
+      if (roomData.settings.decayInterval) setLocalDecayInterval(roomData.settings.decayInterval);
+      if (roomData.settings.minTimerCap) setLocalMinTimerCap(roomData.settings.minTimerCap);
+    }
+  }, [roomData.settings]);
+
+  const handleSaveSettings = () => {
+    socket.emit('update_settings', {
+      roomId: roomData.id,
+      settings: {
+        gameMode,
+        turnTimer: localTimerSetting,
+        lifelineSeconds: localLifelineSetting,
+        decayInterval: localDecayInterval,
+        minTimerCap: localMinTimerCap
+      }
+    });
+    setShowSettingsModal(false);
+  };
+
   const isSpectator = roomData.spectators?.some(s => s.id === playerId);
   const isHost = !isSpectator && roomData.players[0]?.id === playerId;
   const me = (roomData.players.find(p => p.id === playerId) || roomData.spectators?.find(s => s.id === playerId));
@@ -142,6 +174,15 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
 
         {/* Global Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+          {/* Settings Button */}
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => setShowSettingsModal(true)}
+            style={{ padding: '12px', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            <Settings size={18} /> Room Settings
+          </button>
+
           <button 
             className="btn btn-secondary" 
             onClick={onLeaveRoom}
@@ -167,6 +208,220 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
 
       {/* Chat Sidebar */}
       <ChatBox roomData={roomData} socket={socket} playerId={playerId} />
+
+      {/* SETTINGS MODAL */}
+      {showSettingsModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }} onClick={() => setShowSettingsModal(false)}>
+          <div className="glass-panel animate-fade-in" style={{ padding: '32px', width: '90%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                <Settings size={22} color="var(--primary)" />
+                Room Settings
+              </h2>
+              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-dim)' }} onClick={() => setShowSettingsModal(false)} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              {/* Game Mode Selector */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>Game Mode</label>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    disabled={!isHost}
+                    onClick={() => setGameMode('standard')}
+                    className={`btn ${gameMode === 'standard' ? '' : 'btn-secondary'}`}
+                    style={{ flex: 1, padding: '6px 10px', fontSize: '0.85rem', cursor: isHost ? 'pointer' : 'not-allowed', background: gameMode === 'standard' ? 'var(--primary)' : 'rgba(255,255,255,0.05)', borderColor: gameMode === 'standard' ? 'var(--primary)' : 'var(--glass-border)', opacity: isHost ? 1 : 0.6 }}
+                  >
+                    Standard
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!isHost}
+                    onClick={() => setGameMode('decay')}
+                    className={`btn ${gameMode === 'decay' ? '' : 'btn-secondary'}`}
+                    style={{ flex: 1, padding: '6px 10px', fontSize: '0.85rem', cursor: isHost ? 'pointer' : 'not-allowed', background: gameMode === 'decay' ? 'var(--primary)' : 'rgba(255,255,255,0.05)', borderColor: gameMode === 'decay' ? 'var(--primary)' : 'var(--glass-border)', opacity: isHost ? 1 : 0.6 }}
+                  >
+                    Timer Decay
+                  </button>
+                </div>
+              </div>
+
+              {/* Turn Timer Slider */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>Turn Timer</label>
+                  <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--primary)' }}>{localTimerSetting}s</span>
+                </div>
+                <input
+                  type="range"
+                  min="5"
+                  max="60"
+                  value={localTimerSetting}
+                  onChange={(e) => setLocalTimerSetting(parseInt(e.target.value))}
+                  disabled={!isHost}
+                  style={{
+                    width: '100%',
+                    accentColor: 'var(--primary)',
+                    cursor: isHost ? 'pointer' : 'not-allowed',
+                    background: 'rgba(255,255,255,0.1)',
+                    borderRadius: '8px',
+                    height: '5px',
+                    outline: 'none',
+                    opacity: isHost ? 1 : 0.6
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                  <span>5s</span>
+                  <span>30s</span>
+                  <span>60s</span>
+                </div>
+              </div>
+
+              {/* Lifeline Clock Slider */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>Lifeline Added Time</label>
+                  <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--primary)' }}>+{localLifelineSetting}s</span>
+                </div>
+                <input
+                  type="range"
+                  min="15"
+                  max="45"
+                  value={localLifelineSetting}
+                  onChange={(e) => setLocalLifelineSetting(parseInt(e.target.value))}
+                  disabled={!isHost}
+                  style={{
+                    width: '100%',
+                    accentColor: 'var(--primary)',
+                    cursor: isHost ? 'pointer' : 'not-allowed',
+                    background: 'rgba(255,255,255,0.1)',
+                    borderRadius: '8px',
+                    height: '5px',
+                    outline: 'none',
+                    opacity: isHost ? 1 : 0.6
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                  <span>15s</span>
+                  <span>30s</span>
+                  <span>45s</span>
+                </div>
+              </div>
+
+              {/* Decay mode sub-settings */}
+              {gameMode === 'decay' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '10px', borderRadius: '12px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.02)' }} className="animate-fade-in">
+                  {/* Shows per decay */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Decay Every (guesses)</label>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--secondary)' }}>{localDecayInterval} guesses</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="2"
+                      max="10"
+                      value={localDecayInterval}
+                      onChange={(e) => setLocalDecayInterval(parseInt(e.target.value))}
+                      disabled={!isHost}
+                      style={{
+                        width: '100%',
+                        accentColor: 'var(--secondary)',
+                        cursor: isHost ? 'pointer' : 'not-allowed',
+                        background: 'rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        height: '4px',
+                        outline: 'none',
+                        opacity: isHost ? 1 : 0.6
+                      }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--text-dim)' }}>
+                      <span>2</span>
+                      <span>6</span>
+                      <span>10</span>
+                    </div>
+                  </div>
+
+                  {/* Min Timer Cap */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Minimum Timer Cap</label>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--secondary)' }}>{localMinTimerCap}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="5"
+                      max="30"
+                      value={localMinTimerCap}
+                      onChange={(e) => setLocalMinTimerCap(parseInt(e.target.value))}
+                      disabled={!isHost}
+                      style={{
+                        width: '100%',
+                        accentColor: 'var(--secondary)',
+                        cursor: isHost ? 'pointer' : 'not-allowed',
+                        background: 'rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        height: '4px',
+                        outline: 'none',
+                        opacity: isHost ? 1 : 0.6
+                      }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--text-dim)' }}>
+                      <span>5s</span>
+                      <span>15s</span>
+                      <span>30s</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!isHost && (
+                <div style={{ 
+                  fontSize: '0.85rem', 
+                  color: 'var(--text-dim)', 
+                  textAlign: 'center',
+                  background: 'rgba(255,255,255,0.03)',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--glass-border)'
+                }}>
+                  🔒 Only the host ({p1?.name}) can modify settings.
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+                <button 
+                  className="btn btn-secondary" 
+                  style={{ flex: 1, padding: '12px' }} 
+                  onClick={() => setShowSettingsModal(false)}
+                >
+                  {isHost ? 'Cancel' : 'Close'}
+                </button>
+                {isHost && (
+                  <button 
+                    className="btn" 
+                    style={{ flex: 1, padding: '12px' }} 
+                    onClick={handleSaveSettings}
+                  >
+                    Save Settings
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

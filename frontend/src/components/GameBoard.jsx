@@ -10,6 +10,18 @@ import ChatBox from './ChatBox';
 export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLeaveRoom }) {
   const [penaltyMessage, setPenaltyMessage] = useState(null);
   const [notification, setNotification] = useState(null);
+
+  const getActiveBaseTimer = () => {
+    if (!roomData.settings) return 45;
+    if (roomData.settings.gameMode !== 'decay') {
+      return roomData.settings.turnTimer || 45;
+    }
+    const interval = roomData.settings.decayInterval || 5;
+    const minCap = roomData.settings.minTimerCap || 10;
+    const decayCount = Math.floor(roomData.chain.length / interval);
+    return Math.max(minCap, (roomData.settings.turnTimer || 45) - decayCount);
+  };
+  const activeBase = getActiveBaseTimer();
   
   const isSpectator = roomData.spectators?.some(s => s.id === playerId);
   const isMyTurn = !isSpectator && roomData.players[roomData.currentTurnIndex]?.id === playerId;
@@ -83,6 +95,22 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
           <div style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>
             {roomData.status === 'waiting' ? 'Waiting for players' : 'Match in progress'}
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+            <span className="badge" style={{ 
+              background: roomData.settings?.gameMode === 'decay' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+              color: roomData.settings?.gameMode === 'decay' ? 'var(--danger)' : 'var(--success)',
+              borderColor: roomData.settings?.gameMode === 'decay' ? 'var(--danger)' : 'var(--success)',
+              fontSize: '0.75rem',
+              padding: '2px 8px'
+            }}>
+              {roomData.settings?.gameMode === 'decay' ? 'DECAY MODE' : 'STANDARD MODE'}
+            </span>
+            {roomData.settings?.gameMode === 'decay' && (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+                Clock limit: <strong style={{ color: 'white' }}>{activeBase}s</strong> (floor {roomData.settings.minTimerCap}s)
+              </span>
+            )}
+          </div>
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
@@ -134,7 +162,7 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
             disabled={!myLifelines.addTime || !isMyTurn}
             onClick={() => useLifeline('addTime')}
           >
-            <Clock size={18} /> +30s
+            <Clock size={18} /> +{roomData.settings?.lifelineSeconds || 30}s
           </button>
           <button 
             className="btn btn-secondary" 

@@ -47,6 +47,17 @@ function getRoom(roomId) {
   return rooms[roomId];
 }
 
+function getActiveBaseTimer(room) {
+  if (!room || !room.settings) return 45;
+  if (room.settings.gameMode !== 'decay') {
+    return room.settings.turnTimer || 45;
+  }
+  const interval = room.settings.decayInterval || 5;
+  const minCap = room.settings.minTimerCap || 10;
+  const decayCount = Math.floor(room.chain.length / interval);
+  return Math.max(minCap, (room.settings.turnTimer || 45) - decayCount);
+}
+
 function getPublicRooms() {
   return Object.values(rooms)
     .map(r => ({
@@ -100,16 +111,22 @@ io.on('connection', (socket) => {
   });
 
   // Join or Create Room
-  socket.on('join_room', ({ roomId, password, playerName }) => {
+  socket.on('join_room', ({ roomId, password, playerName, settings }) => {
     // If room doesn't exist, create it
     if (!rooms[roomId]) {
+      const gameMode = (settings && (settings.gameMode === 'standard' || settings.gameMode === 'decay')) ? settings.gameMode : 'standard';
+      const turnTimer = (settings && typeof settings.turnTimer === 'number') ? Math.max(5, Math.min(60, settings.turnTimer)) : 45;
+      const lifelineSeconds = (settings && typeof settings.lifelineSeconds === 'number') ? Math.max(15, Math.min(45, settings.lifelineSeconds)) : 30;
+      const decayInterval = (settings && typeof settings.decayInterval === 'number') ? Math.max(2, Math.min(10, settings.decayInterval)) : 5;
+      const minTimerCap = (settings && typeof settings.minTimerCap === 'number') ? Math.max(5, Math.min(30, settings.minTimerCap)) : 10;
+
       rooms[roomId] = {
         id: roomId,
         password: password || '',
         status: 'waiting',
         players: [],
         timerInterval: null,
-        timer: 45,
+        timer: turnTimer,
         currentTurnIndex: 0,
         chain: [],
         usedAnimeIds: new Set(),
@@ -118,9 +135,16 @@ io.on('connection', (socket) => {
         lifelines: {},
         skipUsedThisTurn: false,
         spectators: [],
-        messages: []
+        messages: [],
+        settings: {
+          gameMode,
+          turnTimer,
+          lifelineSeconds,
+          decayInterval,
+          minTimerCap
+        }
       };
-      console.log(`[ROOM CREATED] ID: ${roomId} | Password: ${password || '(None)'}`);
+      console.log(`[ROOM CREATED] ID: ${roomId} | Password: ${password || '(None)'} | Settings:`, rooms[roomId].settings);
     }
 
     const room = rooms[roomId];
@@ -157,6 +181,47 @@ io.on('connection', (socket) => {
     broadcastLobbies();
   });
 
+  socket.on('update_settings', ({ roomId, settings }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+
+    // Only host can modify settings
+    const isHost = room.players[0]?.id === socket.id;
+    if (!isHost) {
+      return socket.emit('room_error', { message: 'Only the host can modify room settings!' });
+    }
+
+    // Only allow modification in 'waiting' status
+    if (room.status !== 'waiting') {
+      return socket.emit('room_error', { message: 'Cannot modify settings while game is in progress!' });
+    }
+
+    if (settings) {
+      if (settings.gameMode === 'standard' || settings.gameMode === 'decay') {
+        room.settings.gameMode = settings.gameMode;
+      }
+      if (typeof settings.turnTimer === 'number') {
+        room.settings.turnTimer = Math.max(5, Math.min(60, settings.turnTimer));
+      }
+      if (typeof settings.lifelineSeconds === 'number') {
+        room.settings.lifelineSeconds = Math.max(15, Math.min(45, settings.lifelineSeconds));
+      }
+      if (typeof settings.decayInterval === 'number') {
+        room.settings.decayInterval = Math.max(2, Math.min(10, settings.decayInterval));
+      }
+      if (typeof settings.minTimerCap === 'number') {
+        room.settings.minTimerCap = Math.max(5, Math.min(30, settings.minTimerCap));
+      }
+
+      // Sync active wait timer
+      room.timer = room.settings.turnTimer;
+
+      let modeDesc = room.settings.gameMode === 'standard' ? 'Standard Mode' : `Decay Mode (degrades by 1s every ${room.settings.decayInterval} shows, floor cap of ${room.settings.minTimerCap}s)`;
+      addSystemMessage(roomId, `Settings updated: Mode is ${modeDesc}, Turn Timer is ${room.settings.turnTimer}s, Lifeline adds +${room.settings.lifelineSeconds}s.`);
+      emitRoomUpdate(roomId);
+    }
+  });
+
   socket.on('toggle_ready', ({ roomId }) => {
     const room = rooms[roomId];
     if (room && room.status === 'waiting') {
@@ -174,7 +239,7 @@ io.on('connection', (socket) => {
         if (!p2 || room.readyPlayers[p2.id]) {
           room.status = 'playing';
           room.currentTurnIndex = (p2 && Math.random() < 0.5) ? 1 : 0; 
-          room.timer = 45;
+          room.timer = getActiveBaseTimer(room);
           startTurnTimer(roomId);
           io.to(roomId).emit('game_started');
           addSystemMessage(roomId, "The match has started!");
@@ -257,16 +322,17 @@ io.on('connection', (socket) => {
       room.lifelines[socket.id].skip = false;
       room.skipUsedThisTurn = true;
       room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
-      room.timer = 45;
+      room.timer = getActiveBaseTimer(room);
       const playerName = room.players.find(p => p.id === socket.id)?.name;
       io.to(roomId).emit('notification', { message: `${playerName} passed their turn!` });
       emitRoomUpdate(roomId);
     } else if (type === 'addTime') {
       if (!myTurn) return socket.emit('turn_error', { message: 'Not your turn' });
       room.lifelines[socket.id].addTime = false;
-      room.timer += 30;
+      const timeToAdd = room.settings?.lifelineSeconds || 30;
+      room.timer += timeToAdd;
       const playerName = room.players.find(p => p.id === socket.id)?.name;
-      io.to(roomId).emit('notification', { message: `${playerName} added +30s to the clock!` });
+      io.to(roomId).emit('notification', { message: `${playerName} added +${timeToAdd}s to the clock!` });
       io.to(roomId).emit('timer_tick', room.timer);
       emitRoomUpdate(roomId);
     } else if (type === 'revealCast') {
@@ -406,7 +472,7 @@ io.on('connection', (socket) => {
       });
 
       // Reset timer and rotate turn
-      room.timer = 45;
+      room.timer = getActiveBaseTimer(room);
       room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
 
       io.to(roomId).emit('play_success', { 
@@ -474,8 +540,9 @@ function checkAutoLifelines(roomId) {
 
   if (lifelines?.addTime) {
     lifelines.addTime = false;
-    room.timer = 30;
-    io.to(roomId).emit('notification', { message: `Almost out of time! ${room.players[room.currentTurnIndex].name}'s +30s lifeline was used automatically.` });
+    const rescueTimer = room.settings?.lifelineSeconds || 30;
+    room.timer = rescueTimer;
+    io.to(roomId).emit('notification', { message: `Almost out of time! ${room.players[room.currentTurnIndex].name}'s +${rescueTimer}s lifeline was used automatically.` });
     io.to(roomId).emit('timer_tick', room.timer);
     emitRoomUpdate(roomId);
     return true;
@@ -484,7 +551,7 @@ function checkAutoLifelines(roomId) {
     room.skipUsedThisTurn = true;
     const pIndex = room.currentTurnIndex;
     room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
-    room.timer = 45;
+    room.timer = getActiveBaseTimer(room);
     io.to(roomId).emit('notification', { message: `Out of time! ${room.players[pIndex].name} automatically used skip.` });
     io.to(roomId).emit('timer_tick', room.timer);
     emitRoomUpdate(roomId);
@@ -536,7 +603,7 @@ function gameOver(roomId, winningPlayerIndex) {
 
   // Reset room for next game
   room.status = 'waiting';
-  room.timer = 45;
+  room.timer = room.settings?.turnTimer || 45;
   room.chain = [];
   room.usedAnimeIds = new Set();
   room.seiyuuUsageCount = {};

@@ -10,6 +10,11 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
   
   const [newRoomId, setNewRoomId] = useState('');
   const [newRoomPassword, setNewRoomPassword] = useState('');
+  const [turnTimer, setTurnTimer] = useState(45);
+  const [gameMode, setGameMode] = useState('standard');
+  const [lifelineSeconds, setLifelineSeconds] = useState(30);
+  const [decayInterval, setDecayInterval] = useState(5);
+  const [minTimerCap, setMinTimerCap] = useState(10);
   
   const [joinRoomId, setJoinRoomId] = useState(null);
   const [joinPassword, setJoinPassword] = useState('');
@@ -29,7 +34,13 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
   const handleCreateRoom = (e) => {
     e.preventDefault();
     if (newRoomId.trim() === '') return;
-    onJoinRoom(newRoomId, newRoomPassword, playerName);
+    onJoinRoom(newRoomId, newRoomPassword, playerName, { 
+      gameMode, 
+      turnTimer, 
+      lifelineSeconds, 
+      decayInterval, 
+      minTimerCap 
+    });
   };
 
   const handleJoinSelectedRoom = (e) => {
@@ -167,6 +178,151 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
                 value={newRoomPassword}
                 onChange={(e) => setNewRoomPassword(e.target.value)}
               />
+              
+              {/* Game Mode */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>Game Mode</label>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setGameMode('standard')}
+                    className={`btn ${gameMode === 'standard' ? '' : 'btn-secondary'}`}
+                    style={{ flex: 1, padding: '8px 12px', fontSize: '0.9rem', background: gameMode === 'standard' ? 'var(--primary)' : 'rgba(255,255,255,0.05)', borderColor: gameMode === 'standard' ? 'var(--primary)' : 'var(--glass-border)' }}
+                  >
+                    Standard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGameMode('decay')}
+                    className={`btn ${gameMode === 'decay' ? '' : 'btn-secondary'}`}
+                    style={{ flex: 1, padding: '8px 12px', fontSize: '0.9rem', background: gameMode === 'decay' ? 'var(--primary)' : 'rgba(255,255,255,0.05)', borderColor: gameMode === 'decay' ? 'var(--primary)' : 'var(--glass-border)' }}
+                  >
+                    Timer Decay
+                  </button>
+                </div>
+              </div>
+
+              {/* Turn Timer Slider */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '4px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>Turn Timer</label>
+                  <span style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--primary)' }}>{turnTimer}s</span>
+                </div>
+                <input
+                  type="range"
+                  min="5"
+                  max="60"
+                  value={turnTimer}
+                  onChange={(e) => setTurnTimer(parseInt(e.target.value))}
+                  style={{
+                    width: '100%',
+                    accentColor: 'var(--primary)',
+                    cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.1)',
+                    borderRadius: '8px',
+                    height: '6px',
+                    outline: 'none'
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                  <span>5s</span>
+                  <span>30s</span>
+                  <span>60s</span>
+                </div>
+              </div>
+
+              {/* Lifeline Clock Slider */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '4px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>Lifeline Added Time</label>
+                  <span style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--primary)' }}>+{lifelineSeconds}s</span>
+                </div>
+                <input
+                  type="range"
+                  min="15"
+                  max="45"
+                  value={lifelineSeconds}
+                  onChange={(e) => setLifelineSeconds(parseInt(e.target.value))}
+                  style={{
+                    width: '100%',
+                    accentColor: 'var(--primary)',
+                    cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.1)',
+                    borderRadius: '8px',
+                    height: '6px',
+                    outline: 'none'
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                  <span>15s</span>
+                  <span>30s</span>
+                  <span>45s</span>
+                </div>
+              </div>
+
+              {/* Decay mode sub-settings */}
+              {gameMode === 'decay' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px', borderRadius: '12px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.02)' }} className="animate-fade-in">
+                  {/* Shows per decay */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ fontSize: '0.85rem', color: 'var(--text-dim)' }}>Decay Every (guesses)</label>
+                      <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--secondary)' }}>{decayInterval} guesses</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="2"
+                      max="10"
+                      value={decayInterval}
+                      onChange={(e) => setDecayInterval(parseInt(e.target.value))}
+                      style={{
+                        width: '100%',
+                        accentColor: 'var(--secondary)',
+                        cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        height: '5px',
+                        outline: 'none'
+                      }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                      <span>2</span>
+                      <span>6</span>
+                      <span>10</span>
+                    </div>
+                  </div>
+
+                  {/* Min Timer Cap */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ fontSize: '0.85rem', color: 'var(--text-dim)' }}>Minimum Timer Cap</label>
+                      <span style={{ fontSize: '0.95rem', fontWeight: 'bold', color: 'var(--secondary)' }}>{minTimerCap}s</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="5"
+                      max="30"
+                      value={minTimerCap}
+                      onChange={(e) => setMinTimerCap(parseInt(e.target.value))}
+                      style={{
+                        width: '100%',
+                        accentColor: 'var(--secondary)',
+                        cursor: 'pointer',
+                        background: 'rgba(255,255,255,0.1)',
+                        borderRadius: '8px',
+                        height: '5px',
+                        outline: 'none'
+                      }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
+                      <span>5s</span>
+                      <span>15s</span>
+                      <span>30s</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <button type="submit" className="btn" style={{ marginTop: '8px' }}>Create & Join</button>
             </form>
           </div>

@@ -143,8 +143,8 @@ function App() {
     setGameState('lobby_browser');
   };
 
-  const joinRoom = (roomId, password, pName) => {
-    socket.emit('join_room', { roomId, password, playerName: pName });
+  const joinRoom = (roomId, password, pName, settings = null) => {
+    socket.emit('join_room', { roomId, password, playerName: pName, settings });
   };
 
   const playTurn = (anime) => {
