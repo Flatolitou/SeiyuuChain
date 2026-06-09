@@ -164,14 +164,16 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
           >
             <Clock size={18} /> +{roomData.settings?.lifelineSeconds || 30}s
           </button>
-          <button 
-            className="btn btn-secondary" 
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: myLifelines.revealCast && isMyTurn && roomData.chain.length > 1 ? 1 : 0.5, borderColor: myLifelines.revealCast ? 'var(--primary)' : 'var(--glass-border)' }}
-            disabled={!myLifelines.revealCast || !isMyTurn || roomData.chain.length <= 1}
-            onClick={() => useLifeline('revealCast')}
-          >
-            <Eye size={18} /> Reveal Cast
-          </button>
+          {!roomData.settings?.revealAllCast && (
+            <button 
+              className="btn btn-secondary" 
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: myLifelines.revealCast && isMyTurn && roomData.chain.length > 1 ? 1 : 0.5, borderColor: myLifelines.revealCast ? 'var(--primary)' : 'var(--glass-border)' }}
+              disabled={!myLifelines.revealCast || !isMyTurn || roomData.chain.length <= 1}
+              onClick={() => useLifeline('revealCast')}
+            >
+              <Eye size={18} /> Reveal Cast
+            </button>
+          )}
           <button 
             className="btn btn-secondary" 
             style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: myLifelines.snipe && isMyTurn && roomData.chain.length > 0 ? 1 : 0.5, borderColor: myLifelines.snipe ? 'var(--primary)' : 'var(--glass-border)' }}

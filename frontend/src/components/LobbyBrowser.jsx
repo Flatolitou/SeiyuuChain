@@ -15,6 +15,7 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
   const [lifelineSeconds, setLifelineSeconds] = useState(30);
   const [decayInterval, setDecayInterval] = useState(5);
   const [minTimerCap, setMinTimerCap] = useState(10);
+  const [revealAllCast, setRevealAllCast] = useState(false);
   
   const [joinRoomId, setJoinRoomId] = useState(null);
   const [joinPassword, setJoinPassword] = useState('');
@@ -39,7 +40,8 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
       turnTimer, 
       lifelineSeconds, 
       decayInterval, 
-      minTimerCap 
+      minTimerCap,
+      revealAllCast
     });
   };
 
@@ -258,6 +260,42 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
                   <span>30s</span>
                   <span>45s</span>
                 </div>
+              </div>
+
+              {/* Reveal All Cast Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.02)', margin: '4px 0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignSelf: 'flex-start', textAlign: 'left' }}>
+                  <label style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-light)' }}>Reveal All Cast</label>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Show all cast members & remove lifeline</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRevealAllCast(!revealAllCast)}
+                  style={{
+                    width: '48px',
+                    height: '26px',
+                    borderRadius: '13px',
+                    background: revealAllCast ? 'var(--primary)' : 'rgba(255,255,255,0.1)',
+                    border: '1px solid var(--glass-border)',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s ease',
+                    padding: 0,
+                    outline: 'none'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    background: 'white',
+                    position: 'absolute',
+                    top: '2px',
+                    left: revealAllCast ? '24px' : '2px',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                  }} />
+                </button>
               </div>
 
               {/* Decay mode sub-settings */}

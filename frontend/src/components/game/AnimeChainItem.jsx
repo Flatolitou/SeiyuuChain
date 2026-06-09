@@ -38,7 +38,7 @@ const AnimeChainItem = React.memo(({ item, index, roomData, isFirst }) => {
           
           {/* Left Side: Seiyuu Info */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {isFirst || item.revealCast ? (
+            {isFirst || item.revealCast || roomData.settings?.revealAllCast ? (
               <div className="custom-scroll" style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '12px' }}>
                 {anime.seiyuus?.map(s => {
                   const usageCount = item.seiyuuUsageCountSnapshot?.[s.id] || roomData.seiyuuUsageCount[s.id] || 0;

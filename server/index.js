@@ -119,6 +119,7 @@ io.on('connection', (socket) => {
       const lifelineSeconds = (settings && typeof settings.lifelineSeconds === 'number') ? Math.max(15, Math.min(45, settings.lifelineSeconds)) : 30;
       const decayInterval = (settings && typeof settings.decayInterval === 'number') ? Math.max(2, Math.min(10, settings.decayInterval)) : 5;
       const minTimerCap = (settings && typeof settings.minTimerCap === 'number') ? Math.max(5, Math.min(30, settings.minTimerCap)) : 10;
+      const revealAllCast = (settings && typeof settings.revealAllCast === 'boolean') ? settings.revealAllCast : false;
 
       rooms[roomId] = {
         id: roomId,
@@ -141,7 +142,8 @@ io.on('connection', (socket) => {
           turnTimer,
           lifelineSeconds,
           decayInterval,
-          minTimerCap
+          minTimerCap,
+          revealAllCast
         }
       };
       console.log(`[ROOM CREATED] ID: ${roomId} | Password: ${password || '(None)'} | Settings:`, rooms[roomId].settings);
@@ -212,12 +214,16 @@ io.on('connection', (socket) => {
       if (typeof settings.minTimerCap === 'number') {
         room.settings.minTimerCap = Math.max(5, Math.min(30, settings.minTimerCap));
       }
+      if (typeof settings.revealAllCast === 'boolean') {
+        room.settings.revealAllCast = settings.revealAllCast;
+      }
 
       // Sync active wait timer
       room.timer = room.settings.turnTimer;
 
       let modeDesc = room.settings.gameMode === 'standard' ? 'Standard Mode' : `Decay Mode (degrades by 1s every ${room.settings.decayInterval} shows, floor cap of ${room.settings.minTimerCap}s)`;
-      addSystemMessage(roomId, `Settings updated: Mode is ${modeDesc}, Turn Timer is ${room.settings.turnTimer}s, Lifeline adds +${room.settings.lifelineSeconds}s.`);
+      let revealDesc = room.settings.revealAllCast ? 'Reveal All Cast (Infinite Reveal)' : 'Standard Reveal Cast Lifeline';
+      addSystemMessage(roomId, `Settings updated: Mode is ${modeDesc}, Turn Timer is ${room.settings.turnTimer}s, Lifeline adds +${room.settings.lifelineSeconds}s, Cast Display is ${revealDesc}.`);
       emitRoomUpdate(roomId);
     }
   });
@@ -336,6 +342,9 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('timer_tick', room.timer);
       emitRoomUpdate(roomId);
     } else if (type === 'revealCast') {
+      if (room.settings?.revealAllCast) {
+        return socket.emit('turn_error', { message: 'Reveal Cast lifeline is disabled because Reveal All Cast is active!' });
+      }
       room.lifelines[socket.id].revealCast = false;
       if (room.chain.length > 0) {
         room.chain[room.chain.length - 1].revealCast = true;

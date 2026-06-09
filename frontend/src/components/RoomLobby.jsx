@@ -9,6 +9,7 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
   const [localLifelineSetting, setLocalLifelineSetting] = useState(roomData.settings?.lifelineSeconds || 30);
   const [localDecayInterval, setLocalDecayInterval] = useState(roomData.settings?.decayInterval || 5);
   const [localMinTimerCap, setLocalMinTimerCap] = useState(roomData.settings?.minTimerCap || 10);
+  const [localRevealAllCast, setLocalRevealAllCast] = useState(roomData.settings?.revealAllCast || false);
 
   useEffect(() => {
     if (roomData.settings) {
@@ -17,6 +18,7 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
       if (roomData.settings.lifelineSeconds) setLocalLifelineSetting(roomData.settings.lifelineSeconds);
       if (roomData.settings.decayInterval) setLocalDecayInterval(roomData.settings.decayInterval);
       if (roomData.settings.minTimerCap) setLocalMinTimerCap(roomData.settings.minTimerCap);
+      if (typeof roomData.settings.revealAllCast === 'boolean') setLocalRevealAllCast(roomData.settings.revealAllCast);
     }
   }, [roomData.settings]);
 
@@ -28,7 +30,8 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
         turnTimer: localTimerSetting,
         lifelineSeconds: localLifelineSetting,
         decayInterval: localDecayInterval,
-        minTimerCap: localMinTimerCap
+        minTimerCap: localMinTimerCap,
+        revealAllCast: localRevealAllCast
       }
     });
     setShowSettingsModal(false);
@@ -317,6 +320,44 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
                   <span>30s</span>
                   <span>45s</span>
                 </div>
+              </div>
+
+              {/* Reveal All Cast Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.02)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignSelf: 'flex-start', textAlign: 'left' }}>
+                  <label style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-light)' }}>Reveal All Cast</label>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Show all cast members & remove lifeline</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isHost}
+                  onClick={() => setLocalRevealAllCast(!localRevealAllCast)}
+                  style={{
+                    width: '48px',
+                    height: '26px',
+                    borderRadius: '13px',
+                    background: localRevealAllCast ? 'var(--primary)' : 'rgba(255,255,255,0.1)',
+                    border: '1px solid var(--glass-border)',
+                    position: 'relative',
+                    cursor: isHost ? 'pointer' : 'not-allowed',
+                    transition: 'background 0.2s ease',
+                    padding: 0,
+                    outline: 'none',
+                    opacity: isHost ? 1 : 0.6
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    background: 'white',
+                    position: 'absolute',
+                    top: '2px',
+                    left: localRevealAllCast ? '24px' : '2px',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                  }} />
+                </button>
               </div>
 
               {/* Decay mode sub-settings */}
