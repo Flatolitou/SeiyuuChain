@@ -65,7 +65,8 @@ function getPublicRooms() {
       playerCount: r.players.length,
       spectatorCount: (r.spectators || []).length,
       hasPassword: r.password !== '',
-      status: r.status // waiting, playing, finished
+      status: r.status, // waiting, playing, finished
+      teamsMode: r.settings?.teamsMode || false
     }));
 }
 
@@ -120,6 +121,8 @@ io.on('connection', (socket) => {
       const decayInterval = (settings && typeof settings.decayInterval === 'number') ? Math.max(2, Math.min(10, settings.decayInterval)) : 5;
       const minTimerCap = (settings && typeof settings.minTimerCap === 'number') ? Math.max(5, Math.min(30, settings.minTimerCap)) : 10;
       const revealAllCast = (settings && typeof settings.revealAllCast === 'boolean') ? settings.revealAllCast : false;
+      const teamsMode = (settings && typeof settings.teamsMode === 'boolean') ? settings.teamsMode : false;
+      const teamsModeThreshold = (settings && typeof settings.teamsModeThreshold === 'number') ? Math.max(1, Math.min(10, settings.teamsModeThreshold)) : 2;
 
       rooms[roomId] = {
         id: roomId,
@@ -129,11 +132,16 @@ io.on('connection', (socket) => {
         timerInterval: null,
         timer: turnTimer,
         currentTurnIndex: 0,
+        currentTurnTeam: 1, // Alternates between 1 and 2 in teams mode
         chain: [],
         usedAnimeIds: new Set(),
         seiyuuUsageCount: {},
         readyPlayers: {},
         lifelines: {},
+        teamLifelines: {
+          1: { skip: true, addTime: true, revealCast: true, snipe: true },
+          2: { skip: true, addTime: true, revealCast: true, snipe: true }
+        },
         skipUsedThisTurn: false,
         spectators: [],
         messages: [],
@@ -143,7 +151,9 @@ io.on('connection', (socket) => {
           lifelineSeconds,
           decayInterval,
           minTimerCap,
-          revealAllCast
+          revealAllCast,
+          teamsMode,
+          teamsModeThreshold
         }
       };
       console.log(`[ROOM CREATED] ID: ${roomId} | Password: ${password || '(None)'} | Settings:`, rooms[roomId].settings);
@@ -161,15 +171,43 @@ io.on('connection', (socket) => {
     const isReturningSpectator = room.spectators.find(p => p.id === socket.id);
 
     if (!isReturningPlayer && !isReturningSpectator) {
-      if (room.players.length < 2 && room.status === 'waiting') {
-        room.players.push({ id: socket.id, name: playerName || `Player ${room.players.length + 1}` });
-        room.lifelines[socket.id] = { skip: true, addTime: true, revealCast: true, snipe: true };
-        addSystemMessage(roomId, `${playerName || 'A player'} joined the room.`);
+      if (room.status === 'waiting') {
+        if (room.settings.teamsMode) {
+          // Join as player in the team with fewer players
+          const t1Count = room.players.filter(p => p.team === 1).length;
+          const t2Count = room.players.filter(p => p.team === 2).length;
+          const assignedTeam = t1Count <= t2Count ? 1 : 2;
+          room.players.push({ 
+            id: socket.id, 
+            name: playerName || `Player ${room.players.length + 1}`,
+            team: assignedTeam,
+            answerCount: 0 
+          });
+          addSystemMessage(roomId, `${playerName || 'A player'} joined Team ${assignedTeam}.`);
+        } else {
+          // 1v1 Mode
+          if (room.players.length < 2) {
+            const assignedTeam = room.players.length === 0 ? 1 : 2;
+            room.players.push({ 
+              id: socket.id, 
+              name: playerName || `Player ${room.players.length + 1}`,
+              team: assignedTeam,
+              answerCount: 0 
+            });
+            room.lifelines[socket.id] = { skip: true, addTime: true, revealCast: true, snipe: true };
+            addSystemMessage(roomId, `${playerName || 'A player'} joined the room.`);
+          } else {
+            room.spectators.push({ id: socket.id, name: playerName || `Spectator ${room.spectators.length + 1}` });
+            addSystemMessage(roomId, `${playerName || 'A spectator'} joined to watch.`);
+          }
+        }
+        socket.join(roomId);
       } else {
+        // Game in progress
         room.spectators.push({ id: socket.id, name: playerName || `Spectator ${room.spectators.length + 1}` });
         addSystemMessage(roomId, `${playerName || 'A spectator'} joined to watch.`);
+        socket.join(roomId);
       }
-      socket.join(roomId);
     } else {
       socket.join(roomId);
     }
@@ -199,6 +237,8 @@ io.on('connection', (socket) => {
     }
 
     if (settings) {
+      const prevTeamsMode = room.settings.teamsMode;
+
       if (settings.gameMode === 'standard' || settings.gameMode === 'decay') {
         room.settings.gameMode = settings.gameMode;
       }
@@ -217,13 +257,48 @@ io.on('connection', (socket) => {
       if (typeof settings.revealAllCast === 'boolean') {
         room.settings.revealAllCast = settings.revealAllCast;
       }
+      if (typeof settings.teamsMode === 'boolean') {
+        room.settings.teamsMode = settings.teamsMode;
+      }
+      if (typeof settings.teamsModeThreshold === 'number') {
+        room.settings.teamsModeThreshold = Math.max(1, Math.min(10, settings.teamsModeThreshold));
+      }
 
       // Sync active wait timer
       room.timer = room.settings.turnTimer;
 
+      // Handle transitions between modes
+      if (prevTeamsMode && !room.settings.teamsMode) {
+        // Teams Mode turned off: sanitize players list to max 2 players, rest become spectators
+        if (room.players.length > 0) room.players[0].team = 1;
+        if (room.players.length > 1) room.players[1].team = 2;
+        
+        if (room.players.length > 2) {
+          const extraPlayers = room.players.splice(2);
+          extraPlayers.forEach(p => {
+            delete room.readyPlayers[p.id];
+            room.spectators.push(p);
+            addSystemMessage(roomId, `${p.name} was moved to spectators because Teams Mode was disabled.`);
+          });
+        }
+
+        // Initialize individual lifelines
+        room.lifelines = {};
+        room.players.forEach(p => {
+          room.lifelines[p.id] = { skip: true, addTime: true, revealCast: true, snipe: true };
+        });
+      } else if (!prevTeamsMode && room.settings.teamsMode) {
+        // Teams Mode turned on: initialize shared lifelines
+        room.teamLifelines = {
+          1: { skip: true, addTime: true, revealCast: true, snipe: true },
+          2: { skip: true, addTime: true, revealCast: true, snipe: true }
+        };
+      }
+
       let modeDesc = room.settings.gameMode === 'standard' ? 'Standard Mode' : `Decay Mode (degrades by 1s every ${room.settings.decayInterval} shows, floor cap of ${room.settings.minTimerCap}s)`;
       let revealDesc = room.settings.revealAllCast ? 'Reveal All Cast (Infinite Reveal)' : 'Standard Reveal Cast Lifeline';
-      addSystemMessage(roomId, `Settings updated: Mode is ${modeDesc}, Turn Timer is ${room.settings.turnTimer}s, Lifeline adds +${room.settings.lifelineSeconds}s, Cast Display is ${revealDesc}.`);
+      let teamsModeDesc = room.settings.teamsMode ? `Enabled (Threshold: ${room.settings.teamsModeThreshold})` : 'Disabled';
+      addSystemMessage(roomId, `Settings updated: Mode is ${modeDesc}, Turn Timer is ${room.settings.turnTimer}s, Lifeline adds +${room.settings.lifelineSeconds}s, Cast Display is ${revealDesc}, Teams Mode is ${teamsModeDesc}.`);
       emitRoomUpdate(roomId);
     }
   });
@@ -240,11 +315,46 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (room && room.status === 'waiting' && room.players.length >= 1) { // Allow starting even with 1 player
       if (room.players[0].id === socket.id) { // Host
-        const p2 = room.players[1];
-        // If there's a P2, they must be ready. If not, host can start alone (practice/spectated mode)
-        if (!p2 || room.readyPlayers[p2.id]) {
+        const t1Players = room.players.filter(p => p.team === 1);
+        const t2Players = room.players.filter(p => p.team === 2);
+        
+        const otherPlayersReady = room.players.every(p => p.id === socket.id || room.readyPlayers[p.id]);
+
+        let startAllowed = false;
+        if (room.settings.teamsMode) {
+          startAllowed = t1Players.length >= 1 && t2Players.length >= 1 && otherPlayersReady;
+          if (!startAllowed && (t1Players.length === 0 || t2Players.length === 0)) {
+            return socket.emit('room_error', { message: 'Each team must have at least 1 player to start!' });
+          }
+          if (!startAllowed && !otherPlayersReady) {
+            return socket.emit('room_error', { message: 'All players must be ready!' });
+          }
+        } else {
+          // Standard 1v1
+          const p2 = room.players.find(p => p.id !== socket.id);
+          startAllowed = !p2 || room.readyPlayers[p2.id];
+        }
+
+        if (startAllowed) {
           room.status = 'playing';
-          room.currentTurnIndex = (p2 && Math.random() < 0.5) ? 1 : 0; 
+          if (room.settings.teamsMode) {
+            room.currentTurnTeam = Math.random() < 0.5 ? 1 : 2; 
+            // Reset answer counts for all players
+            room.players.forEach(p => {
+              p.answerCount = 0;
+            });
+            // Reset shared lifelines
+            room.teamLifelines = {
+              1: { skip: true, addTime: true, revealCast: true, snipe: true },
+              2: { skip: true, addTime: true, revealCast: true, snipe: true }
+            };
+          } else {
+            room.currentTurnIndex = (room.players.length > 1 && Math.random() < 0.5) ? 1 : 0;
+            room.lifelines = {};
+            room.players.forEach(p => {
+              room.lifelines[p.id] = { skip: true, addTime: true, revealCast: true, snipe: true };
+            });
+          }
           room.timer = getActiveBaseTimer(room);
           startTurnTimer(roomId);
           io.to(roomId).emit('game_started');
@@ -274,39 +384,87 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room) return;
 
+    const pIndex = room.players.findIndex(p => p.id === socket.id);
+    const sIndex = room.spectators.findIndex(s => s.id === socket.id);
+    
+    let playerObj = null;
+    if (pIndex !== -1) {
+      playerObj = room.players[pIndex];
+    } else if (sIndex !== -1) {
+      playerObj = room.spectators[sIndex];
+    }
+
+    if (!playerObj) return;
+
     if (to === 'spectator') {
-      const pIndex = room.players.findIndex(p => p.id === socket.id);
       if (pIndex !== -1) {
-        const player = room.players.splice(pIndex, 1)[0];
-        room.spectators.push(player);
+        room.players.splice(pIndex, 1);
+        room.spectators.push(playerObj);
         delete room.readyPlayers[socket.id];
-        addSystemMessage(roomId, `${player.name} moved to spectators.`);
+        addSystemMessage(roomId, `${playerObj.name} moved to spectators.`);
         
-        // If game is playing and only 1 player left or 0, handle it
-        if (room.status === 'playing' && room.players.length < 2) {
-          // In this simple version, if a player leaves/switches during play, it might end the game
-          // But user said "switch ... even in middle of round", so we'll let it stay if at least 1 player
-          if (room.players.length === 0) {
-            gameOver(roomId, -1); // No winner
+        if (room.status === 'playing') {
+          if (room.settings.teamsMode) {
+            const t1Players = room.players.filter(p => p.team === 1);
+            const t2Players = room.players.filter(p => p.team === 2);
+            if (t1Players.length === 0 || t2Players.length === 0) {
+              const winningTeam = t1Players.length > 0 ? 1 : (t2Players.length > 0 ? 2 : -1);
+              gameOver(roomId, winningTeam);
+            }
+          } else {
+            if (room.players.length === 1) {
+              gameOver(roomId, 0); // remaining player wins (index 0)
+            } else if (room.players.length === 0) {
+              gameOver(roomId, -1);
+            }
           }
         }
         
         emitRoomUpdate(roomId);
         broadcastLobbies();
       }
-    } else if (to === 'player') {
-      if (room.players.length < 2) {
-        const sIndex = room.spectators.findIndex(s => s.id === socket.id);
-        if (sIndex !== -1) {
-          const spec = room.spectators.splice(sIndex, 1)[0];
-          room.players.push(spec);
-          room.readyPlayers[socket.id] = false;
-          room.lifelines[spec.id] = room.lifelines[spec.id] || { skip: true, addTime: true, revealCast: true, snipe: true };
-          addSystemMessage(roomId, `${spec.name} is now a player.`);
-          emitRoomUpdate(roomId);
-          broadcastLobbies();
+    } else if (to === 'team1' || to === 'team2' || to === 'player') {
+      let targetTeam = 1;
+      if (to === 'team2') {
+        targetTeam = 2;
+      } else if (to === 'player') {
+        const t1Count = room.players.filter(p => p.team === 1).length;
+        const t2Count = room.players.filter(p => p.team === 2).length;
+        targetTeam = t1Count <= t2Count ? 1 : 2;
+      }
+
+      // Enforce 1v1 limit if teamsMode is disabled
+      if (!room.settings.teamsMode) {
+        const teamOccupied = room.players.some(p => p.team === targetTeam && p.id !== socket.id);
+        if (teamOccupied) {
+          const otherTeam = targetTeam === 1 ? 2 : 1;
+          const otherOccupied = room.players.some(p => p.team === otherTeam && p.id !== socket.id);
+          if (!otherOccupied) {
+            targetTeam = otherTeam;
+          } else {
+            return socket.emit('room_error', { message: 'Room is full!' });
+          }
         }
       }
+
+      playerObj.team = targetTeam;
+      playerObj.answerCount = playerObj.answerCount || 0;
+
+      if (sIndex !== -1) {
+        room.spectators.splice(sIndex, 1);
+        room.players.push(playerObj);
+        room.readyPlayers[socket.id] = false;
+        
+        if (!room.settings.teamsMode) {
+          room.lifelines[socket.id] = room.lifelines[socket.id] || { skip: true, addTime: true, revealCast: true, snipe: true };
+        }
+        addSystemMessage(roomId, `${playerObj.name} is now playing on Team ${targetTeam}.`);
+      } else {
+        addSystemMessage(roomId, `${playerObj.name} switched to Team ${targetTeam}.`);
+      }
+      
+      emitRoomUpdate(roomId);
+      broadcastLobbies();
     }
   });
 
@@ -314,9 +472,21 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room || room.status !== 'playing') return;
 
-    const myTurn = room.players[room.currentTurnIndex]?.id === socket.id;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
 
-    if (!room.lifelines[socket.id] || !room.lifelines[socket.id][type]) {
+    let myTurn = false;
+    let lifelines = null;
+
+    if (room.settings.teamsMode) {
+      myTurn = (player.team === room.currentTurnTeam);
+      lifelines = room.teamLifelines?.[player.team];
+    } else {
+      myTurn = room.players[room.currentTurnIndex]?.id === socket.id;
+      lifelines = room.lifelines[socket.id];
+    }
+
+    if (!lifelines || !lifelines[type]) {
       return socket.emit('turn_error', { message: 'Lifeline already used or unavailable!' });
     }
 
@@ -325,32 +495,33 @@ io.on('connection', (socket) => {
       if (room.skipUsedThisTurn) {
         return socket.emit('turn_error', { message: 'Opponent just used skip, you must play!' });
       }
-      room.lifelines[socket.id].skip = false;
+      lifelines.skip = false;
       room.skipUsedThisTurn = true;
-      room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
+      if (room.settings.teamsMode) {
+        room.currentTurnTeam = room.currentTurnTeam === 1 ? 2 : 1;
+      } else {
+        room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
+      }
       room.timer = getActiveBaseTimer(room);
-      const playerName = room.players.find(p => p.id === socket.id)?.name;
-      io.to(roomId).emit('notification', { message: `${playerName} passed their turn!` });
+      io.to(roomId).emit('notification', { message: `${player.name} passed their turn!` });
       emitRoomUpdate(roomId);
     } else if (type === 'addTime') {
       if (!myTurn) return socket.emit('turn_error', { message: 'Not your turn' });
-      room.lifelines[socket.id].addTime = false;
+      lifelines.addTime = false;
       const timeToAdd = room.settings?.lifelineSeconds || 30;
       room.timer += timeToAdd;
-      const playerName = room.players.find(p => p.id === socket.id)?.name;
-      io.to(roomId).emit('notification', { message: `${playerName} added +${timeToAdd}s to the clock!` });
+      io.to(roomId).emit('notification', { message: `${player.name} added +${timeToAdd}s to the clock!` });
       io.to(roomId).emit('timer_tick', room.timer);
       emitRoomUpdate(roomId);
     } else if (type === 'revealCast') {
       if (room.settings?.revealAllCast) {
         return socket.emit('turn_error', { message: 'Reveal Cast lifeline is disabled because Reveal All Cast is active!' });
       }
-      room.lifelines[socket.id].revealCast = false;
+      lifelines.revealCast = false;
       if (room.chain.length > 0) {
         room.chain[room.chain.length - 1].revealCast = true;
       }
-      const playerName = room.players.find(p => p.id === socket.id)?.name;
-      io.to(roomId).emit('notification', { message: `${playerName} revealed the cast!` });
+      io.to(roomId).emit('notification', { message: `${player.name} revealed the cast!` });
       emitRoomUpdate(roomId);
     }
   });
@@ -364,9 +535,34 @@ io.on('connection', (socket) => {
       return socket.emit('turn_error', { message: 'Anime not found in database!' });
     }
 
-    // Verify it's this player's turn
-    if (room.players[room.currentTurnIndex].id !== socket.id) {
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    // Verify it's this player's turn/team's turn
+    let isMyTurn = false;
+    if (room.settings.teamsMode) {
+      isMyTurn = (player.team === room.currentTurnTeam);
+    } else {
+      isMyTurn = (room.players[room.currentTurnIndex]?.id === socket.id);
+    }
+
+    if (!isMyTurn) {
       return socket.emit('turn_error', { message: 'Not your turn' });
+    }
+
+    // Verify player is not blocked by count threshold
+    if (room.settings.teamsMode) {
+      const teamPlayers = room.players.filter(p => p.team === player.team);
+      if (teamPlayers.length > 1) {
+        const nextCount = (player.answerCount || 0) + 1;
+        const tempCounts = teamPlayers.map(p => p.id === player.id ? nextCount : (p.answerCount || 0));
+        const maxCount = Math.max(...tempCounts);
+        const minCount = Math.min(...tempCounts);
+        const threshold = room.settings.teamsModeThreshold || 2;
+        if (maxCount - minCount > threshold) {
+          return socket.emit('turn_error', { message: `Count difference would exceed threshold (${threshold}). Wait for teammate to answer!` });
+        }
+      }
     }
 
     let isValid = true;
@@ -380,7 +576,8 @@ io.on('connection', (socket) => {
     } else {
       if (isSnipe) {
         // Snipe Logic
-        if (!room.lifelines[socket.id] || !room.lifelines[socket.id].snipe) {
+        const lifelines = room.settings.teamsMode ? room.teamLifelines?.[player.team] : room.lifelines[socket.id];
+        if (!lifelines || !lifelines.snipe) {
           isValid = false;
           turnErrorMsg = 'Snipe lifeline already used or unavailable!';
         } else {
@@ -388,10 +585,9 @@ io.on('connection', (socket) => {
           if (hasSeiyuu) {
             isValid = true;
             linkingSeiyuuIds = [parseInt(snipeSeiyuuId)];
-            room.lifelines[socket.id].snipe = false;
-            const playerName = room.players.find(p => p.id === socket.id)?.name;
+            lifelines.snipe = false;
             const seiyuuName = anilistData.seiyuus[snipeSeiyuuId] || 'Someone';
-            io.to(roomId).emit('notification', { message: `${playerName} sniped ${seiyuuName}!` });
+            io.to(roomId).emit('notification', { message: `${player.name} sniped ${seiyuuName}!` });
           } else {
             isValid = false;
             turnErrorMsg = 'The sniped seiyuu is not in this anime!';
@@ -447,7 +643,11 @@ io.on('connection', (socket) => {
         rescued = checkAutoLifelines(roomId);
         if (!rescued) {
           room.timer = 0;
-          gameOver(roomId, (room.currentTurnIndex + 1) % 2); // other player wins
+          if (room.settings.teamsMode) {
+            gameOver(roomId, player.team === 1 ? 2 : 1);
+          } else {
+            gameOver(roomId, (room.currentTurnIndex + 1) % 2); // other player wins
+          }
           return;
         }
       }
@@ -477,12 +677,20 @@ io.on('connection', (socket) => {
       room.chain.push({
         animeId: animeId,
         linkingSeiyuuIds: linkingSeiyuuIds, // null for first
-        seiyuuUsageCountSnapshot: snapshot
+        seiyuuUsageCountSnapshot: snapshot,
+        playedBy: player.name
       });
+
+      // Increment player count
+      player.answerCount = (player.answerCount || 0) + 1;
 
       // Reset timer and rotate turn
       room.timer = getActiveBaseTimer(room);
-      room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
+      if (room.settings.teamsMode) {
+        room.currentTurnTeam = room.currentTurnTeam === 1 ? 2 : 1;
+      } else {
+        room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
+      }
 
       io.to(roomId).emit('play_success', { 
         animeId: animeId, 
@@ -502,6 +710,7 @@ io.on('connection', (socket) => {
     if (pIndex !== -1) {
       leaverName = room.players[pIndex].name;
       room.players.splice(pIndex, 1);
+      delete room.readyPlayers[socketId];
     } else {
       const sIndex = room.spectators.findIndex(s => s.id === socketId);
       if (sIndex !== -1) {
@@ -514,10 +723,25 @@ io.on('connection', (socket) => {
       clearInterval(room.timerInterval);
       delete rooms[roomId];
     } else {
-      if (room.status === 'playing' && room.players.length === 1) {
-        gameOver(roomId, 0); // last remaining player wins
-      } else if (room.status === 'playing' && room.players.length === 0) {
-        gameOver(roomId, -1);
+      if (room.status === 'playing') {
+        if (room.settings.teamsMode) {
+          const t1Players = room.players.filter(p => p.team === 1);
+          const t2Players = room.players.filter(p => p.team === 2);
+          if (t1Players.length === 0 || t2Players.length === 0) {
+            const winningTeam = t1Players.length > 0 ? 1 : (t2Players.length > 0 ? 2 : -1);
+            gameOver(roomId, winningTeam);
+          } else {
+            emitRoomUpdate(roomId);
+          }
+        } else {
+          if (room.players.length === 1) {
+            gameOver(roomId, 0); // last remaining player wins
+          } else if (room.players.length === 0) {
+            gameOver(roomId, -1);
+          } else {
+            emitRoomUpdate(roomId);
+          }
+        }
       } else {
         emitRoomUpdate(roomId);
       }
@@ -544,27 +768,52 @@ function checkAutoLifelines(roomId) {
   const room = rooms[roomId];
   if (!room) return false;
   
-  const currentPlayerId = room.players[room.currentTurnIndex]?.id;
-  const lifelines = room.lifelines[currentPlayerId];
+  if (room.settings.teamsMode) {
+    const activeTeam = room.currentTurnTeam;
+    const lifelines = room.teamLifelines?.[activeTeam];
 
-  if (lifelines?.addTime) {
-    lifelines.addTime = false;
-    const rescueTimer = room.settings?.lifelineSeconds || 30;
-    room.timer = rescueTimer;
-    io.to(roomId).emit('notification', { message: `Almost out of time! ${room.players[room.currentTurnIndex].name}'s +${rescueTimer}s lifeline was used automatically.` });
-    io.to(roomId).emit('timer_tick', room.timer);
-    emitRoomUpdate(roomId);
-    return true;
-  } else if (lifelines?.skip && !room.skipUsedThisTurn) {
-    lifelines.skip = false;
-    room.skipUsedThisTurn = true;
-    const pIndex = room.currentTurnIndex;
-    room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
-    room.timer = getActiveBaseTimer(room);
-    io.to(roomId).emit('notification', { message: `Out of time! ${room.players[pIndex].name} automatically used skip.` });
-    io.to(roomId).emit('timer_tick', room.timer);
-    emitRoomUpdate(roomId);
-    return true;
+    if (lifelines?.addTime) {
+      lifelines.addTime = false;
+      const rescueTimer = room.settings?.lifelineSeconds || 30;
+      room.timer = rescueTimer;
+      io.to(roomId).emit('notification', { message: `Almost out of time! Team ${activeTeam}'s +${rescueTimer}s lifeline was used automatically.` });
+      io.to(roomId).emit('timer_tick', room.timer);
+      emitRoomUpdate(roomId);
+      return true;
+    } else if (lifelines?.skip && !room.skipUsedThisTurn) {
+      lifelines.skip = false;
+      room.skipUsedThisTurn = true;
+      const prevTeam = activeTeam;
+      room.currentTurnTeam = activeTeam === 1 ? 2 : 1;
+      room.timer = getActiveBaseTimer(room);
+      io.to(roomId).emit('notification', { message: `Out of time! Team ${prevTeam} automatically used skip.` });
+      io.to(roomId).emit('timer_tick', room.timer);
+      emitRoomUpdate(roomId);
+      return true;
+    }
+  } else {
+    const currentPlayerId = room.players[room.currentTurnIndex]?.id;
+    const lifelines = room.lifelines[currentPlayerId];
+
+    if (lifelines?.addTime) {
+      lifelines.addTime = false;
+      const rescueTimer = room.settings?.lifelineSeconds || 30;
+      room.timer = rescueTimer;
+      io.to(roomId).emit('notification', { message: `Almost out of time! ${room.players[room.currentTurnIndex].name}'s +${rescueTimer}s lifeline was used automatically.` });
+      io.to(roomId).emit('timer_tick', room.timer);
+      emitRoomUpdate(roomId);
+      return true;
+    } else if (lifelines?.skip && !room.skipUsedThisTurn) {
+      lifelines.skip = false;
+      room.skipUsedThisTurn = true;
+      const pIndex = room.currentTurnIndex;
+      room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
+      room.timer = getActiveBaseTimer(room);
+      io.to(roomId).emit('notification', { message: `Out of time! ${room.players[pIndex].name} automatically used skip.` });
+      io.to(roomId).emit('timer_tick', room.timer);
+      emitRoomUpdate(roomId);
+      return true;
+    }
   }
   return false;
 }
@@ -580,35 +829,54 @@ function startTurnTimer(roomId) {
     if (room.timer <= 0) {
       if (!checkAutoLifelines(roomId)) {
         // Game over by timeout
-        const winningIndex = (room.currentTurnIndex + 1) % 2;
-        gameOver(roomId, winningIndex);
+        if (room.settings.teamsMode) {
+          const winningTeam = room.currentTurnTeam === 1 ? 2 : 1;
+          gameOver(roomId, winningTeam);
+        } else {
+          const winningIndex = (room.currentTurnIndex + 1) % 2;
+          gameOver(roomId, winningIndex);
+        }
       }
     }
   }, 1000);
 }
 
-function gameOver(roomId, winningPlayerIndex) {
+function gameOver(roomId, winningPlayerIndexOrTeam) {
   const room = rooms[roomId];
   if (!room) return;
   clearInterval(room.timerInterval);
   
-  // Try to find the winner in players
-  let winner = null;
-  if (winningPlayerIndex !== -1) {
-    winner = room.players[winningPlayerIndex];
+  let winnerName = 'Nobody (Draw)';
+  let winnerId = null;
+
+  if (room.settings.teamsMode) {
+    if (winningPlayerIndexOrTeam === 1 || winningPlayerIndexOrTeam === 2) {
+      winnerName = `Team ${winningPlayerIndexOrTeam}`;
+      winnerId = winningPlayerIndexOrTeam;
+      addSystemMessage(roomId, `Game Over! Team ${winningPlayerIndexOrTeam} won the match!`);
+    } else {
+      addSystemMessage(roomId, `Game Over! The match ended.`);
+    }
+  } else {
+    // Standard 1v1
+    let winner = null;
+    if (winningPlayerIndexOrTeam !== -1) {
+      winner = room.players[winningPlayerIndexOrTeam];
+    }
+    if (winner) {
+      winnerName = winner.name;
+      winnerId = winner.id;
+      addSystemMessage(roomId, `Game Over! ${winner.name} won the match!`);
+    } else {
+      addSystemMessage(roomId, `Game Over! The match ended.`);
+    }
   }
 
   room.lastMatchResult = { 
-    winnerId: winner ? winner.id : null, 
-    winnerName: winner ? winner.name : 'Nobody (Draw)',
+    winnerId: winnerId, 
+    winnerName: winnerName,
     timestamp: Date.now()
   };
-
-  if (winner) {
-    addSystemMessage(roomId, `Game Over! ${winner.name} won the match!`);
-  } else {
-    addSystemMessage(roomId, `Game Over! The match ended.`);
-  }
 
   // Reset room for next game
   room.status = 'waiting';
@@ -619,12 +887,23 @@ function gameOver(roomId, winningPlayerIndex) {
   room.readyPlayers = {};
   room.skipUsedThisTurn = false;
   
-  // Reset lifelines for all players for the next game
-  Object.keys(room.lifelines).forEach(id => {
-    room.lifelines[id] = { skip: true, addTime: true, revealCast: true, snipe: true };
-  });
+  // Reset lifelines and counts for the next game
+  if (room.settings.teamsMode) {
+    room.teamLifelines = {
+      1: { skip: true, addTime: true, revealCast: true, snipe: true },
+      2: { skip: true, addTime: true, revealCast: true, snipe: true }
+    };
+    room.players.forEach(p => {
+      p.answerCount = 0;
+    });
+  } else {
+    room.lifelines = {};
+    room.players.forEach(p => {
+      room.lifelines[p.id] = { skip: true, addTime: true, revealCast: true, snipe: true };
+    });
+  }
 
-  io.to(roomId).emit('game_over', { winner: winner });
+  io.to(roomId).emit('game_over', { winner: { name: winnerName, id: winnerId } });
   emitRoomUpdate(roomId);
 }
 

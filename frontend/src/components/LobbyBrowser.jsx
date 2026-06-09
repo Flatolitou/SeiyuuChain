@@ -7,7 +7,6 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
   // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
-  
   const [newRoomId, setNewRoomId] = useState('');
   const [newRoomPassword, setNewRoomPassword] = useState('');
   const [turnTimer, setTurnTimer] = useState(45);
@@ -16,6 +15,8 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
   const [decayInterval, setDecayInterval] = useState(5);
   const [minTimerCap, setMinTimerCap] = useState(10);
   const [revealAllCast, setRevealAllCast] = useState(false);
+  const [teamsMode, setTeamsMode] = useState(false);
+  const [teamsModeThreshold, setTeamsModeThreshold] = useState(2);
   
   const [joinRoomId, setJoinRoomId] = useState(null);
   const [joinPassword, setJoinPassword] = useState('');
@@ -41,7 +42,9 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
       lifelineSeconds, 
       decayInterval, 
       minTimerCap,
-      revealAllCast
+      revealAllCast,
+      teamsMode,
+      teamsModeThreshold
     });
   };
 
@@ -137,8 +140,8 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-dim)', fontSize: '0.9rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Users size={16} color={room.playerCount >= 2 ? 'var(--text-dim)' : 'var(--success)'} /> 
-                      {room.playerCount} / 2
+                      <Users size={16} color={room.teamsMode ? 'var(--primary)' : (room.playerCount >= 2 ? 'var(--text-dim)' : 'var(--success)')} /> 
+                      {room.teamsMode ? `${room.playerCount} (Teams)` : `${room.playerCount} / 2`}
                     </div>
                     {room.spectatorCount > 0 && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', opacity: 0.7 }}>
@@ -297,6 +300,73 @@ export default function LobbyBrowser({ playerName, socket, onJoinRoom }) {
                   }} />
                 </button>
               </div>
+
+              {/* Teams Mode Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: '12px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.02)', margin: '4px 0' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignSelf: 'flex-start', textAlign: 'left' }}>
+                  <label style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-light)' }}>Teams Mode</label>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Enable cooperative team play</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTeamsMode(!teamsMode)}
+                  style={{
+                    width: '48px',
+                    height: '26px',
+                    borderRadius: '13px',
+                    background: teamsMode ? 'var(--primary)' : 'rgba(255,255,255,0.1)',
+                    border: '1px solid var(--glass-border)',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s ease',
+                    padding: 0,
+                    outline: 'none'
+                  }}
+                >
+                  <div style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    background: 'white',
+                    position: 'absolute',
+                    top: '2px',
+                    left: teamsMode ? '24px' : '2px',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
+                  }} />
+                </button>
+              </div>
+
+              {/* Teams Mode Threshold Slider */}
+              {teamsMode && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '4px 0' }} className="animate-fade-in">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>Teammate Count Threshold</label>
+                    <span style={{ fontSize: '1rem', fontWeight: 'bold', color: 'var(--primary)' }}>{teamsModeThreshold} answers</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={teamsModeThreshold}
+                    onChange={(e) => setTeamsModeThreshold(parseInt(e.target.value))}
+                    style={{
+                      width: '100%',
+                      accentColor: 'var(--primary)',
+                      cursor: 'pointer',
+                      background: 'rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      height: '6px',
+                      outline: 'none'
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                    <span>1</span>
+                    <span>5</span>
+                    <span>10</span>
+                  </div>
+                </div>
+              )}
 
               {/* Decay mode sub-settings */}
               {gameMode === 'decay' && (
