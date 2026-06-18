@@ -167,10 +167,11 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
                   padding: '4px 8px',
                   borderRadius: '6px',
                   background: isMe ? `${color}11` : 'transparent',
-                  border: isMe ? `1px solid ${color}33` : '1px solid transparent'
+                  border: isMe ? `1px solid ${color}33` : '1px solid transparent',
+                  opacity: p.disconnected ? 0.5 : 1
                 }}>
-                  <span style={{ fontSize: '0.85rem', fontWeight: isMe ? 700 : 400, color: isBlocked ? 'var(--danger)' : (isMe ? 'white' : 'var(--text-dim)') }}>
-                    {p.name}{isMe ? ' (You)' : ''}
+                  <span style={{ fontSize: '0.85rem', fontWeight: isMe ? 700 : 400, color: isBlocked ? 'var(--danger)' : (p.disconnected ? 'var(--text-dim)' : (isMe ? 'white' : 'var(--text-dim)')) }}>
+                    {p.name}{isMe ? ' (You)' : ''} {p.disconnected ? '(Offline)' : ''}
                     {isBlocked && isTurn && <span style={{ fontSize: '0.7rem', marginLeft: '4px' }}>🚫</span>}
                   </span>
                   <span style={{
@@ -205,23 +206,27 @@ export default function GameBoard({ roomData, playerId, socket, onPlayTurn, onLe
   };
 
   // Standard 1v1 Header
-  const renderStandardHeader = () => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-      <div style={{ textAlign: 'center', color: roomData.players[0] ? (roomData.currentTurnIndex === 0 ? 'var(--primary)' : 'var(--text-dim)') : 'var(--text-dim)' }}>
-        <div style={{ fontWeight: roomData.currentTurnIndex === 0 ? 800 : 400, fontSize: roomData.currentTurnIndex === 0 ? '1.1rem' : '0.9rem' }}>
-          {roomData.players[0]?.name || 'Player 1'} {roomData.players[0]?.id === playerId ? '(You)' : ''}
+  const renderStandardHeader = () => {
+    const p1 = roomData.players[0];
+    const p2 = roomData.players[1];
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+        <div style={{ textAlign: 'center', color: p1 ? (roomData.currentTurnIndex === 0 ? 'var(--primary)' : 'var(--text-dim)') : 'var(--text-dim)', opacity: p1?.disconnected ? 0.5 : 1 }}>
+          <div style={{ fontWeight: roomData.currentTurnIndex === 0 ? 800 : 400, fontSize: roomData.currentTurnIndex === 0 ? '1.1rem' : '0.9rem' }}>
+            {p1?.name || 'Player 1'} {p1?.id === playerId ? '(You)' : ''} {p1?.disconnected ? '(Offline)' : ''}
+          </div>
+        </div>
+
+        <TimerDisplay socket={socket} initialTimer={roomData.timer} />
+
+        <div style={{ textAlign: 'center', color: p2 ? (roomData.currentTurnIndex === 1 ? 'var(--secondary)' : 'var(--text-dim)') : 'var(--text-dim)', opacity: p2?.disconnected ? 0.5 : 1 }}>
+          <div style={{ fontWeight: roomData.currentTurnIndex === 1 ? 800 : 400, fontSize: roomData.currentTurnIndex === 1 ? '1.1rem' : '0.9rem' }}>
+            {p2?.name || 'Player 2'} {p2?.id === playerId ? '(You)' : ''} {p2?.disconnected ? '(Offline)' : ''}
+          </div>
         </div>
       </div>
-
-      <TimerDisplay socket={socket} initialTimer={roomData.timer} />
-
-      <div style={{ textAlign: 'center', color: roomData.players[1] ? (roomData.currentTurnIndex === 1 ? 'var(--secondary)' : 'var(--text-dim)') : 'var(--text-dim)' }}>
-        <div style={{ fontWeight: roomData.currentTurnIndex === 1 ? 800 : 400, fontSize: roomData.currentTurnIndex === 1 ? '1.1rem' : '0.9rem' }}>
-          {roomData.players[1]?.name || 'Player 2'} {roomData.players[1]?.id === playerId ? '(You)' : ''}
-        </div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>

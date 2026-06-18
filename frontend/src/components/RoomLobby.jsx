@@ -129,9 +129,9 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
                     const isPlayerHost = roomData.players[0]?.id === p.id;
                     const isPlayerReady = roomData.readyPlayers[p.id];
                     return (
-                      <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                        <span style={{ fontWeight: p.id === playerId ? 800 : 400 }}>
-                          {p.name} {p.id === playerId ? '(You)' : ''} {isPlayerHost ? '👑' : ''}
+                      <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', opacity: p.disconnected ? 0.5 : 1 }}>
+                        <span style={{ fontWeight: p.id === playerId ? 800 : 400, color: p.disconnected ? 'var(--text-dim)' : 'var(--text-light)' }}>
+                          {p.name} {p.id === playerId ? '(You)' : ''} {isPlayerHost ? '👑' : ''} {p.disconnected ? '(Offline)' : ''}
                         </span>
                         {isPlayerHost ? (
                           <span style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600 }}>Host</span>
@@ -169,9 +169,9 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
                     const isPlayerHost = roomData.players[0]?.id === p.id;
                     const isPlayerReady = roomData.readyPlayers[p.id];
                     return (
-                      <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)' }}>
-                        <span style={{ fontWeight: p.id === playerId ? 800 : 400 }}>
-                          {p.name} {p.id === playerId ? '(You)' : ''} {isPlayerHost ? '👑' : ''}
+                      <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)', opacity: p.disconnected ? 0.5 : 1 }}>
+                        <span style={{ fontWeight: p.id === playerId ? 800 : 400, color: p.disconnected ? 'var(--text-dim)' : 'var(--text-light)' }}>
+                          {p.name} {p.id === playerId ? '(You)' : ''} {isPlayerHost ? '👑' : ''} {p.disconnected ? '(Offline)' : ''}
                         </span>
                         {isPlayerHost ? (
                           <span style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 600 }}>Host</span>
@@ -199,9 +199,11 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
               border: '1px solid var(--glass-border)',
               borderRadius: '12px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', opacity: p1?.disconnected ? 0.5 : 1 }}>
                 <ShieldCheck size={24} color="var(--primary)" />
-                <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>{p1?.name} {p1?.id === playerId ? '(You)' : ''}</span>
+                <span style={{ fontSize: '1.2rem', fontWeight: 600, color: p1?.disconnected ? 'var(--text-dim)' : 'var(--text-light)' }}>
+                  {p1?.name} {p1?.id === playerId ? '(You)' : ''} {p1?.disconnected ? '(Offline)' : ''}
+                </span>
               </div>
               <div style={{ color: 'var(--primary)', fontWeight: 600 }}>Host</div>
             </div>
@@ -218,9 +220,11 @@ export default function RoomLobby({ roomData, playerId, socket, onToggleReady, o
             }}>
               {p2 ? (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', opacity: p2.disconnected ? 0.5 : 1 }}>
                     <Users size={24} color="var(--secondary)" />
-                    <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>{p2.name} {p2.id === playerId ? '(You)' : ''}</span>
+                    <span style={{ fontSize: '1.2rem', fontWeight: 600, color: p2.disconnected ? 'var(--text-dim)' : 'var(--text-light)' }}>
+                      {p2.name} {p2.id === playerId ? '(You)' : ''} {p2.disconnected ? '(Offline)' : ''}
+                    </span>
                   </div>
                   {p2Ready ? (
                     <div style={{ color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>

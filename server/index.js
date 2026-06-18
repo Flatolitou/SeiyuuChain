@@ -112,7 +112,7 @@ io.on('connection', (socket) => {
   });
 
   // Join or Create Room
-  socket.on('join_room', ({ roomId, password, playerName, settings }) => {
+  socket.on('join_room', ({ roomId, password, playerName, playerId, settings }) => {
     // If room doesn't exist, create it
     if (!rooms[roomId]) {
       const gameMode = (settings && (settings.gameMode === 'standard' || settings.gameMode === 'decay')) ? settings.gameMode : 'standard';
@@ -166,49 +166,69 @@ io.on('connection', (socket) => {
       return socket.emit('room_error', { message: 'Incorrect password' });
     }
 
-    // Add player or spectator
-    const isReturningPlayer = room.players.find(p => p.id === socket.id);
-    const isReturningSpectator = room.spectators.find(p => p.id === socket.id);
+    // Check if player/spectator is already in the room (reconnection)
+    const existingPlayer = room.players.find(p => p.id === playerId);
+    if (existingPlayer) {
+      if (existingPlayer.disconnectTimeout) {
+        clearTimeout(existingPlayer.disconnectTimeout);
+        delete existingPlayer.disconnectTimeout;
+      }
+      existingPlayer.socketId = socket.id;
+      existingPlayer.disconnected = false;
 
-    if (!isReturningPlayer && !isReturningSpectator) {
-      if (room.status === 'waiting') {
-        if (room.settings.teamsMode) {
-          // Join as player in the team with fewer players
-          const t1Count = room.players.filter(p => p.team === 1).length;
-          const t2Count = room.players.filter(p => p.team === 2).length;
-          const assignedTeam = t1Count <= t2Count ? 1 : 2;
+      socket.join(roomId);
+      addSystemMessage(roomId, `${existingPlayer.name} reconnected.`);
+      socket.emit('chat_history', room.messages);
+      emitRoomUpdate(roomId);
+      return;
+    }
+
+    const existingSpectator = room.spectators.find(s => s.id === playerId);
+    if (existingSpectator) {
+      existingSpectator.socketId = socket.id;
+      socket.join(roomId);
+      socket.emit('chat_history', room.messages);
+      emitRoomUpdate(roomId);
+      return;
+    }
+
+    if (room.status === 'waiting') {
+      if (room.settings.teamsMode) {
+        // Join as player in the team with fewer players
+        const t1Count = room.players.filter(p => p.team === 1).length;
+        const t2Count = room.players.filter(p => p.team === 2).length;
+        const assignedTeam = t1Count <= t2Count ? 1 : 2;
+        room.players.push({ 
+          id: playerId, 
+          socketId: socket.id,
+          name: playerName || `Player ${room.players.length + 1}`,
+          team: assignedTeam,
+          answerCount: 0 
+        });
+        addSystemMessage(roomId, `${playerName || 'A player'} joined Team ${assignedTeam}.`);
+      } else {
+        // 1v1 Mode
+        if (room.players.length < 2) {
+          const assignedTeam = room.players.length === 0 ? 1 : 2;
           room.players.push({ 
-            id: socket.id, 
+            id: playerId, 
+            socketId: socket.id,
             name: playerName || `Player ${room.players.length + 1}`,
             team: assignedTeam,
             answerCount: 0 
           });
-          addSystemMessage(roomId, `${playerName || 'A player'} joined Team ${assignedTeam}.`);
+          room.lifelines[playerId] = { skip: true, addTime: true, revealCast: true, snipe: true };
+          addSystemMessage(roomId, `${playerName || 'A player'} joined the room.`);
         } else {
-          // 1v1 Mode
-          if (room.players.length < 2) {
-            const assignedTeam = room.players.length === 0 ? 1 : 2;
-            room.players.push({ 
-              id: socket.id, 
-              name: playerName || `Player ${room.players.length + 1}`,
-              team: assignedTeam,
-              answerCount: 0 
-            });
-            room.lifelines[socket.id] = { skip: true, addTime: true, revealCast: true, snipe: true };
-            addSystemMessage(roomId, `${playerName || 'A player'} joined the room.`);
-          } else {
-            room.spectators.push({ id: socket.id, name: playerName || `Spectator ${room.spectators.length + 1}` });
-            addSystemMessage(roomId, `${playerName || 'A spectator'} joined to watch.`);
-          }
+          room.spectators.push({ id: playerId, socketId: socket.id, name: playerName || `Spectator ${room.spectators.length + 1}` });
+          addSystemMessage(roomId, `${playerName || 'A spectator'} joined to watch.`);
         }
-        socket.join(roomId);
-      } else {
-        // Game in progress
-        room.spectators.push({ id: socket.id, name: playerName || `Spectator ${room.spectators.length + 1}` });
-        addSystemMessage(roomId, `${playerName || 'A spectator'} joined to watch.`);
-        socket.join(roomId);
       }
+      socket.join(roomId);
     } else {
+      // Game in progress
+      room.spectators.push({ id: playerId, socketId: socket.id, name: playerName || `Spectator ${room.spectators.length + 1}` });
+      addSystemMessage(roomId, `${playerName || 'A spectator'} joined to watch.`);
       socket.join(roomId);
     }
 
@@ -226,7 +246,7 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     // Only host can modify settings
-    const isHost = room.players[0]?.id === socket.id;
+    const isHost = room.players[0]?.socketId === socket.id;
     if (!isHost) {
       return socket.emit('room_error', { message: 'Only the host can modify room settings!' });
     }
@@ -306,19 +326,23 @@ io.on('connection', (socket) => {
   socket.on('toggle_ready', ({ roomId }) => {
     const room = rooms[roomId];
     if (room && room.status === 'waiting') {
-      room.readyPlayers[socket.id] = !room.readyPlayers[socket.id];
-      emitRoomUpdate(roomId);
+      const player = room.players.find(p => p.socketId === socket.id);
+      if (player) {
+        room.readyPlayers[player.id] = !room.readyPlayers[player.id];
+        emitRoomUpdate(roomId);
+      }
     }
   });
 
   socket.on('start_game', ({ roomId }) => {
     const room = rooms[roomId];
     if (room && room.status === 'waiting' && room.players.length >= 1) { // Allow starting even with 1 player
-      if (room.players[0].id === socket.id) { // Host
+      if (room.players[0]?.socketId === socket.id) { // Host
         const t1Players = room.players.filter(p => p.team === 1);
         const t2Players = room.players.filter(p => p.team === 2);
         
-        const otherPlayersReady = room.players.every(p => p.id === socket.id || room.readyPlayers[p.id]);
+        const hostPlayer = room.players.find(p => p.socketId === socket.id);
+        const otherPlayersReady = room.players.every(p => p.id === hostPlayer?.id || room.readyPlayers[p.id]);
 
         let startAllowed = false;
         if (room.settings.teamsMode) {
@@ -331,7 +355,7 @@ io.on('connection', (socket) => {
           }
         } else {
           // Standard 1v1
-          const p2 = room.players.find(p => p.id !== socket.id);
+          const p2 = room.players.find(p => p.id !== hostPlayer?.id);
           startAllowed = !p2 || room.readyPlayers[p2.id];
         }
 
@@ -370,7 +394,7 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room) return;
     
-    const player = room.players.find(p => p.id === socket.id) || room.spectators.find(p => p.id === socket.id);
+    const player = room.players.find(p => p.socketId === socket.id) || room.spectators.find(p => p.socketId === socket.id);
     if (!player) return;
 
     const msg = { type: 'user', sender: player.name, text, timestamp: Date.now() };
@@ -384,8 +408,8 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room) return;
 
-    const pIndex = room.players.findIndex(p => p.id === socket.id);
-    const sIndex = room.spectators.findIndex(s => s.id === socket.id);
+    const pIndex = room.players.findIndex(p => p.socketId === socket.id);
+    const sIndex = room.spectators.findIndex(s => s.socketId === socket.id);
     
     let playerObj = null;
     if (pIndex !== -1) {
@@ -400,7 +424,7 @@ io.on('connection', (socket) => {
       if (pIndex !== -1) {
         room.players.splice(pIndex, 1);
         room.spectators.push(playerObj);
-        delete room.readyPlayers[socket.id];
+        delete room.readyPlayers[playerObj.id];
         addSystemMessage(roomId, `${playerObj.name} moved to spectators.`);
         
         if (room.status === 'playing') {
@@ -435,10 +459,10 @@ io.on('connection', (socket) => {
 
       // Enforce 1v1 limit if teamsMode is disabled
       if (!room.settings.teamsMode) {
-        const teamOccupied = room.players.some(p => p.team === targetTeam && p.id !== socket.id);
+        const teamOccupied = room.players.some(p => p.team === targetTeam && p.id !== playerObj.id);
         if (teamOccupied) {
           const otherTeam = targetTeam === 1 ? 2 : 1;
-          const otherOccupied = room.players.some(p => p.team === otherTeam && p.id !== socket.id);
+          const otherOccupied = room.players.some(p => p.team === otherTeam && p.id !== playerObj.id);
           if (!otherOccupied) {
             targetTeam = otherTeam;
           } else {
@@ -453,10 +477,10 @@ io.on('connection', (socket) => {
       if (sIndex !== -1) {
         room.spectators.splice(sIndex, 1);
         room.players.push(playerObj);
-        room.readyPlayers[socket.id] = false;
+        room.readyPlayers[playerObj.id] = false;
         
         if (!room.settings.teamsMode) {
-          room.lifelines[socket.id] = room.lifelines[socket.id] || { skip: true, addTime: true, revealCast: true, snipe: true };
+          room.lifelines[playerObj.id] = room.lifelines[playerObj.id] || { skip: true, addTime: true, revealCast: true, snipe: true };
         }
         addSystemMessage(roomId, `${playerObj.name} is now playing on Team ${targetTeam}.`);
       } else {
@@ -472,7 +496,7 @@ io.on('connection', (socket) => {
     const room = rooms[roomId];
     if (!room || room.status !== 'playing') return;
 
-    const player = room.players.find(p => p.id === socket.id);
+    const player = room.players.find(p => p.socketId === socket.id);
     if (!player) return;
 
     let myTurn = false;
@@ -482,8 +506,8 @@ io.on('connection', (socket) => {
       myTurn = (player.team === room.currentTurnTeam);
       lifelines = room.teamLifelines?.[player.team];
     } else {
-      myTurn = room.players[room.currentTurnIndex]?.id === socket.id;
-      lifelines = room.lifelines[socket.id];
+      myTurn = room.players[room.currentTurnIndex]?.socketId === socket.id;
+      lifelines = room.lifelines[player.id];
     }
 
     if (!lifelines || !lifelines[type]) {
@@ -535,7 +559,7 @@ io.on('connection', (socket) => {
       return socket.emit('turn_error', { message: 'Anime not found in database!' });
     }
 
-    const player = room.players.find(p => p.id === socket.id);
+    const player = room.players.find(p => p.socketId === socket.id);
     if (!player) return;
 
     // Verify it's this player's turn/team's turn
@@ -543,7 +567,7 @@ io.on('connection', (socket) => {
     if (room.settings.teamsMode) {
       isMyTurn = (player.team === room.currentTurnTeam);
     } else {
-      isMyTurn = (room.players[room.currentTurnIndex]?.id === socket.id);
+      isMyTurn = (room.players[room.currentTurnIndex]?.socketId === socket.id);
     }
 
     if (!isMyTurn) {
@@ -576,7 +600,7 @@ io.on('connection', (socket) => {
     } else {
       if (isSnipe) {
         // Snipe Logic
-        const lifelines = room.settings.teamsMode ? room.teamLifelines?.[player.team] : room.lifelines[socket.id];
+        const lifelines = room.settings.teamsMode ? room.teamLifelines?.[player.team] : room.lifelines[player.id];
         if (!lifelines || !lifelines.snipe) {
           isValid = false;
           turnErrorMsg = 'Snipe lifeline already used or unavailable!';
@@ -653,7 +677,7 @@ io.on('connection', (socket) => {
       }
       
       // Send penalty message (even if rescued, so user knows move was invalid)
-      io.to(roomId).emit('play_penalty', { playerId: socket.id, message: `${turnErrorMsg} (-3s)`, newTimer: room.timer });
+      io.to(roomId).emit('play_penalty', { playerId: player.id, message: `${turnErrorMsg} (-3s)`, newTimer: room.timer });
       emitRoomUpdate(roomId);
     } else {
       // Valid move!
@@ -695,63 +719,87 @@ io.on('connection', (socket) => {
       io.to(roomId).emit('play_success', { 
         animeId: animeId, 
         linkingSeiyuuIds,
-        playerId: socket.id 
+        playerId: player.id 
       });
       emitRoomUpdate(roomId);
     }
   });
 
-  const handlePlayerLeave = (socketId, roomId) => {
+  const handlePlayerLeave = (socketId, roomId, isExplicitLeave = false) => {
     const room = rooms[roomId];
     if (!room) return;
     
-    let leaverName = '';
-    const pIndex = room.players.findIndex(p => p.id === socketId);
-    if (pIndex !== -1) {
-      leaverName = room.players[pIndex].name;
-      room.players.splice(pIndex, 1);
-      delete room.readyPlayers[socketId];
-    } else {
-      const sIndex = room.spectators.findIndex(s => s.id === socketId);
+    const player = room.players.find(p => p.socketId === socketId);
+    if (!player) {
+      const sIndex = room.spectators.findIndex(s => s.socketId === socketId);
       if (sIndex !== -1) {
-        leaverName = room.spectators[sIndex].name;
         room.spectators.splice(sIndex, 1);
+        emitRoomUpdate(roomId);
+        broadcastLobbies();
       }
+      return;
     }
 
+    if (isExplicitLeave) {
+      const pIndex = room.players.findIndex(p => p.id === player.id);
+      if (pIndex !== -1) {
+        room.players.splice(pIndex, 1);
+        delete room.readyPlayers[player.id];
+        addSystemMessage(roomId, `${player.name} left the room.`);
+        handleGameLeaveCleanups(room, roomId);
+      }
+      return;
+    }
+
+    // Temporary disconnect (grace period)
+    player.disconnected = true;
+    addSystemMessage(roomId, `${player.name} disconnected. Waiting 15s to reconnect...`);
+    emitRoomUpdate(roomId);
+
+    player.disconnectTimeout = setTimeout(() => {
+      const pIndex = room.players.findIndex(p => p.id === player.id);
+      if (pIndex !== -1) {
+        const leaverName = room.players[pIndex].name;
+        room.players.splice(pIndex, 1);
+        delete room.readyPlayers[player.id];
+        addSystemMessage(roomId, `${leaverName} failed to reconnect and was removed.`);
+        handleGameLeaveCleanups(room, roomId);
+      }
+    }, 15000);
+  };
+
+  const handleGameLeaveCleanups = (room, roomId) => {
     if (room.players.length === 0 && room.spectators.length === 0) {
       clearInterval(room.timerInterval);
       delete rooms[roomId];
-    } else {
-      if (room.status === 'playing') {
-        if (room.settings.teamsMode) {
-          const t1Players = room.players.filter(p => p.team === 1);
-          const t2Players = room.players.filter(p => p.team === 2);
-          if (t1Players.length === 0 || t2Players.length === 0) {
-            const winningTeam = t1Players.length > 0 ? 1 : (t2Players.length > 0 ? 2 : -1);
-            gameOver(roomId, winningTeam);
-          } else {
-            emitRoomUpdate(roomId);
-          }
+    } else if (room.status === 'playing') {
+      if (room.settings.teamsMode) {
+        const t1Players = room.players.filter(p => p.team === 1);
+        const t2Players = room.players.filter(p => p.team === 2);
+        if (t1Players.length === 0 || t2Players.length === 0) {
+          const winningTeam = t1Players.length > 0 ? 1 : (t2Players.length > 0 ? 2 : -1);
+          gameOver(roomId, winningTeam);
         } else {
-          if (room.players.length === 1) {
-            gameOver(roomId, 0); // last remaining player wins
-          } else if (room.players.length === 0) {
-            gameOver(roomId, -1);
-          } else {
-            emitRoomUpdate(roomId);
-          }
+          emitRoomUpdate(roomId);
         }
       } else {
-        emitRoomUpdate(roomId);
+        if (room.players.length === 1) {
+          gameOver(roomId, 0); // last remaining player wins
+        } else if (room.players.length === 0) {
+          gameOver(roomId, -1);
+        } else {
+          emitRoomUpdate(roomId);
+        }
       }
+    } else {
+      emitRoomUpdate(roomId);
     }
     broadcastLobbies();
   };
 
   socket.on('leave_room', ({ roomId }) => {
     socket.leave(roomId);
-    handlePlayerLeave(socket.id, roomId);
+    handlePlayerLeave(socket.id, roomId, true);
   });
 
 
@@ -759,7 +807,7 @@ io.on('connection', (socket) => {
     // Basic disconnect handling
     console.log('User disconnected', socket.id);
     for (const roomId in rooms) {
-      handlePlayerLeave(socket.id, roomId);
+      handlePlayerLeave(socket.id, roomId, false);
     }
   });
 });

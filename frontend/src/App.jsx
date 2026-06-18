@@ -15,7 +15,15 @@ function App() {
   const [gameState, setGameState] = useState('home'); // home, lobby_browser, room_lobby, playing, finished
   const [roomData, setRoomData] = useState(null);
   const [playerName, setPlayerName] = useState('');
-  const [playerId, setPlayerId] = useState(socket.id);
+  const [playerId] = useState(() => {
+    let id = localStorage.getItem('seiyuuchain_player_id');
+    if (!id) {
+      id = 'p_' + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('seiyuuchain_player_id', id);
+    }
+    return id;
+  });
+  const [activeRoomInfo, setActiveRoomInfo] = useState(null); // { roomId, password, playerName }
   const [matchWinner, setMatchWinner] = useState(null);
   const [isConnected, setIsConnected] = useState(socket.connected);
   
@@ -44,27 +52,27 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (socket.id) setPlayerId(socket.id);
-    
     socket.on('connect', () => {
-      setPlayerId(socket.id);
       setIsConnected(true);
       setToast(null); // Clear connection error toasts
+
+      // Auto-reconnect if we were in a room
+      if (activeRoomInfo) {
+        console.log("Reconnecting to room:", activeRoomInfo.roomId);
+        socket.emit('join_room', {
+          roomId: activeRoomInfo.roomId,
+          password: activeRoomInfo.password,
+          playerName: activeRoomInfo.playerName,
+          playerId,
+          settings: null
+        });
+      }
     });
 
     socket.on('disconnect', (reason) => {
       console.log('Socket disconnected:', reason);
       setIsConnected(false);
-      
-      // If we are in a game or lobby, this disconnect (likely a server restart) 
-      // means the room is gone on the server.
-      if (gameState !== 'home' && gameState !== 'lobby_browser') {
-        showToast("Connection to server lost. Rooms may have been reset.", 'error');
-        setGameState('lobby_browser');
-        setRoomData(null);
-      } else {
-        showToast("Lost connection to server...", 'error');
-      }
+      showToast("Lost connection to server. Trying to reconnect...", 'error');
     });
 
     socket.on('connect_error', () => {
@@ -86,6 +94,11 @@ function App() {
 
     socket.on('room_error', (data) => {
       showToast(data.message, 'error');
+      if (activeRoomInfo && (data.message.includes('not found') || data.message.includes('password') || data.message.includes('Incorrect'))) {
+        setActiveRoomInfo(null);
+        setGameState('lobby_browser');
+        setRoomData(null);
+      }
     });
 
     // Initialize Local DB
@@ -115,7 +128,7 @@ function App() {
       socket.off('chat_history');
       socket.off('chat_message');
     };
-  }, [gameState]);
+  }, [gameState, activeRoomInfo, playerId]);
 
   // Robust View Switching Logic based on room state
   // Robust View Switching Logic based on room state
@@ -144,7 +157,8 @@ function App() {
   };
 
   const joinRoom = (roomId, password, pName, settings = null) => {
-    socket.emit('join_room', { roomId, password, playerName: pName, settings });
+    setActiveRoomInfo({ roomId, password, playerName: pName });
+    socket.emit('join_room', { roomId, password, playerName: pName, playerId, settings });
   };
 
   const playTurn = (anime) => {
@@ -162,6 +176,7 @@ function App() {
   const leaveRoom = () => {
     if (roomData) {
       socket.emit('leave_room', { roomId: roomData.id });
+      setActiveRoomInfo(null);
       setGameState('lobby_browser');
       setRoomData(null);
     }
@@ -219,10 +234,64 @@ function App() {
         />
       )}
 
+      {/* Reconnecting Overlay */}
+      {!isConnected && activeRoomInfo && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(10, 10, 15, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000,
+          color: 'white'
+        }}>
+          <div className="spinner" style={{
+            width: '50px',
+            height: '50px',
+            border: '4px solid rgba(255, 255, 255, 0.1)',
+            borderTop: '4px solid var(--primary, #6366f1)',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            marginBottom: '20px'
+          }} />
+          <h2 style={{ fontWeight: 800, margin: '0 0 10px 0', fontSize: '1.8rem', letterSpacing: '-0.5px' }}>Connection Lost</h2>
+          <p style={{ color: 'var(--text-dim, #94a3b8)', margin: 0, fontSize: '1rem' }}>Attempting to reconnect to your session...</p>
+          <button onClick={() => {
+            setActiveRoomInfo(null);
+            setGameState('lobby_browser');
+            setRoomData(null);
+          }} style={{
+            marginTop: '24px',
+            padding: '10px 20px',
+            background: 'rgba(255, 255, 255, 0.08)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            borderRadius: '8px',
+            color: 'white',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'background 0.2s'
+          }}
+          onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.15)'}
+          onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.08)'}>
+            Back to Lobbies
+          </button>
+        </div>
+      )}
+
       <style>{`
         @keyframes fadeInDown {
           from { opacity: 0; transform: translate(-50%, -20px); }
           to { opacity: 1; transform: translate(-50%, 0); }
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
       `}</style>
     </div>
