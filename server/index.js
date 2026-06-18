@@ -83,10 +83,18 @@ const addSystemMessage = (roomId, text) => {
   io.to(roomId).emit('chat_message', msg);
 };
 
+const sanitizePlayer = (p) => ({
+  id: p.id,
+  name: p.name,
+  team: p.team,
+  answerCount: p.answerCount || 0,
+  disconnected: p.disconnected || false
+});
+
 const emitRoomUpdate = (rid) => {
   const r = rooms[rid];
   if (!r) return;
-  const sanitizedChain = r.chain.map((item, index) => {
+  const sanitizedChain = r.chain.map((item) => {
     // We send only the ABSOLUTE MINIMUM needed for the card
     // The client will hydrate the title/image/all_seiyuus using its local copy
     return {
@@ -98,11 +106,17 @@ const emitRoomUpdate = (rid) => {
   });
   io.to(rid).emit('room_state_update', {
     ...r,
+    // Sanitize players/spectators: strip server-internal fields (socketId,
+    // disconnectTimeout) that are non-serializable and would cause Socket.IO's
+    // recursive hasBinary check to throw "Maximum call stack size exceeded"
+    players: r.players.map(sanitizePlayer),
+    spectators: r.spectators.map(sanitizePlayer),
     chain: sanitizedChain,
     usedAnimeIds: Array.from(r.usedAnimeIds),
     timerInterval: undefined
   });
 };
+
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
