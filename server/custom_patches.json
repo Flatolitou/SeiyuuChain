@@ -1,0 +1,21 @@
+{
+  "description": "Put custom anime or voice actor additions here. If titles/coverImage are left blank for a new show, the script will attempt to fetch them from AniList by ID.",
+  "anime": [
+    {
+      "id": 1567,
+      "titleRomaji": "Kaitou Saint Tail",
+      "titleEnglish": "Mysterious Thief Saint Tail",
+      "coverImage": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx1567-Is6i6GqL5m2b.jpg",
+      "seiyuus": [
+        {
+          "id": 95029,
+          "name": "Mika Kanai",
+          "characters": [
+            "Maju",
+            "Sachiko"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -11,7 +11,14 @@ export async function initDb() {
   if (Object.keys(db.anime).length > 0) return db;
 
   try {
-    const response = await fetch('/anilist_data.json');
+    let response;
+    try {
+      response = await fetch('/anilist_data_game.json');
+      if (!response.ok) throw new Error("Game DB not found");
+    } catch (e) {
+      console.log("Failed to load /anilist_data_game.json, falling back to /anilist_data.json");
+      response = await fetch('/anilist_data.json');
+    }
     db = await response.json();
     
     // Initialize Fuse for searching

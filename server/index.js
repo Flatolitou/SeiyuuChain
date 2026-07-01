@@ -29,12 +29,17 @@ app.get('/ping', (req, res) => {
 
 // Load Anime Database
 let anilistData = { anime: {}, seiyuus: {} };
-const dbPath = path.join(__dirname, '../frontend/public/anilist_data.json');
-if (fs.existsSync(dbPath)) {
-  anilistData = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-  console.log(`Server loaded DB: ${Object.keys(anilistData.anime).length} anime`);
+const gameDbPath = path.join(__dirname, '../frontend/public/anilist_data_game.json');
+const baseDbPath = path.join(__dirname, '../frontend/public/anilist_data.json');
+
+if (fs.existsSync(gameDbPath)) {
+  anilistData = JSON.parse(fs.readFileSync(gameDbPath, 'utf8'));
+  console.log(`Server loaded Game DB: ${Object.keys(anilistData.anime).length} anime`);
+} else if (fs.existsSync(baseDbPath)) {
+  anilistData = JSON.parse(fs.readFileSync(baseDbPath, 'utf8'));
+  console.log(`Server loaded Base DB: ${Object.keys(anilistData.anime).length} anime`);
 } else {
-  console.error("CRITICAL: anilist_data.json not found!");
+  console.error("CRITICAL: No anime database found!");
 }
 
 // Loads DB once at startup. Automatic reload disabled to prevent hangs on Render.

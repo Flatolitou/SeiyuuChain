@@ -26,9 +26,13 @@ export default function TimerDisplay({ socket, initialTimer }) {
       borderRadius: '24px', 
       display: 'flex', 
       alignItems: 'center', 
+      justifyContent: 'center',
       gap: '8px', 
       fontSize: '1.5rem', 
       fontWeight: 800, 
+      width: '160px',
+      minWidth: '160px',
+      fontVariantNumeric: 'tabular-nums',
       color: timer <= 10 ? 'var(--danger)' : 'white', 
       border: `2px solid ${timer <= 10 ? 'var(--danger)' : 'var(--glass-border)'}` 
     }}>
