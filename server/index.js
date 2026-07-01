@@ -767,7 +767,7 @@ io.on('connection', (socket) => {
 
     // Temporary disconnect (grace period)
     player.disconnected = true;
-    addSystemMessage(roomId, `${player.name} disconnected. Waiting 15s to reconnect...`);
+    addSystemMessage(roomId, `${player.name} disconnected. Waiting 45s to reconnect...`);
     emitRoomUpdate(roomId);
 
     player.disconnectTimeout = setTimeout(() => {
@@ -779,7 +779,7 @@ io.on('connection', (socket) => {
         addSystemMessage(roomId, `${leaverName} failed to reconnect and was removed.`);
         handleGameLeaveCleanups(room, roomId);
       }
-    }, 15000);
+    }, 45000);
   };
 
   const handleGameLeaveCleanups = (room, roomId) => {
